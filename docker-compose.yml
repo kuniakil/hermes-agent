@@ -1,0 +1,14 @@
+services:
+  hermes:
+    image: hermes:local
+    container_name: hermes-agent
+    volumes:
+      - ./data:/opt/data
+#      - .:/opt/hermes:ro
+    environment:
+      - HERMES_HOME=/opt/data
+      - TZ=Asia/Taipei
+    command: gateway run
+    stdin_open: true
+    tty: true
+    restart: always
