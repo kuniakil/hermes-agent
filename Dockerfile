@@ -29,17 +29,17 @@ WORKDIR /opt/hermes
 COPY package.json package-lock.json ./
 COPY web/package.json web/package-lock.json web/
 
-RUN npm install --prefer-offline --no-audit && \
-    npx playwright install --with-deps chromium --only-shell && \
-    (cd web && npm install --prefer-offline --no-audit) && \
-    npm cache clean --force
+# RUN npm install --prefer-offline --no-audit && \
+#    npx playwright install --with-deps chromium --only-shell && \
+#    (cd web && npm install --prefer-offline --no-audit) && \
+#    npm cache clean --force
 
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
 COPY --chown=hermes:hermes . .
 
 # Build web dashboard (Vite outputs to hermes_cli/web_dist/)
-RUN cd web && npm run build
+# RUN cd web && npm run build
 
 # ---------- Python virtualenv ----------
 RUN chown hermes:hermes /opt/hermes
