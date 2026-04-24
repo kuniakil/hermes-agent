@@ -69,3 +69,5 @@ mini-swe-agent/
 .nix-stamps/
 result
 website/static/api/skills-index.json
+UPGRADE_STRATEGY.md
+git_learning_notes.html
