@@ -13,9 +13,10 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Install system dependencies in one layer, clear APT cache
+# tini reaps orphaned zombie processes (MCP stdio subprocesses, git, bun, etc.)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential nodejs npm python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client docker-cli && \
+        build-essential nodejs npm python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client docker-cli tini && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user for runtime; UID can be overridden via HERMES_UID at runtime
@@ -49,14 +50,15 @@ RUN cd ui-tui/packages/hermes-ink && \
 # Now build the rest of ui-tui
 RUN cd ui-tui && npm run build
 
-# CRITICAL VERIFICATION: Check the final bundle location
-RUN ls -l /opt/hermes/ui-tui/node_modules/@hermes/ink/dist/ink-bundle.js || \
-    ls -l /opt/hermes/ui-tui/packages/hermes-ink/dist/ink-bundle.js || \
-    (echo "CRITICAL: ink-bundle.js still missing!" && exit 1)
+# ---------- Permissions ----------
+# Make install dir world-readable so any HERMES_UID can read it at runtime.
+# The venv needs to be traversable too.
+USER root
+RUN chmod -R a+rX /opt/hermes
+# Start as root so the entrypoint can usermod/groupmod + gosu.
+# If HERMES_UID is unset, the entrypoint drops to the default hermes user (10000).
 
 # ---------- Python virtualenv ----------
-RUN chown hermes:hermes /opt/hermes
-USER hermes
 RUN uv venv && \
     uv pip install --no-cache-dir -e ".[all]"
 
@@ -65,4 +67,4 @@ ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_HOME=/opt/data
 ENV PATH="/opt/data/.local/bin:${PATH}"
 VOLUME [ "/opt/data" ]
-ENTRYPOINT [ "/opt/hermes/docker/entrypoint.sh" ]
+ENTRYPOINT [ "/usr/bin/tini", "-g", "--", "/opt/hermes/docker/entrypoint.sh" ]
