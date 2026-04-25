@@ -9,6 +9,9 @@ ENV PYTHONUNBUFFERED=1
 # install survives the /opt/data volume overlay at runtime.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
 
+# Limit Node memory to prevent OOM during build
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Install system dependencies in one layer, clear APT cache
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -29,17 +32,18 @@ WORKDIR /opt/hermes
 COPY package.json package-lock.json ./
 COPY web/package.json web/package-lock.json web/
 
-# RUN npm install --prefer-offline --no-audit && \
-#    npx playwright install --with-deps chromium --only-shell && \
-#    (cd web && npm install --prefer-offline --no-audit) && \
-#    npm cache clean --force
+# Use --prefer-offline and --no-audit to reduce memory/network load
+RUN npm install --prefer-offline --no-audit && \
+    npx playwright install --with-deps chromium --only-shell && \
+    (cd web && npm install --prefer-offline --no-audit) && \
+    npm cache clean --force
 
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
 COPY --chown=hermes:hermes . .
 
 # Build web dashboard (Vite outputs to hermes_cli/web_dist/)
-# RUN cd web && npm run build
+RUN cd web && npm run build
 
 # ---------- Python virtualenv ----------
 RUN chown hermes:hermes /opt/hermes
