@@ -35,8 +35,8 @@ COPY --chown=hermes:hermes . .
 RUN npm install --prefer-offline --no-audit && \
     npx playwright install --with-deps chromium --only-shell
 
-# Install esbuild globally to ensure it is always in the PATH for builds
-RUN npm install -g esbuild
+# Install esbuild and typescript globally to ensure they are always in the PATH for builds
+RUN npm install -g esbuild typescript
 
 # Build web dashboard
 RUN cd web && npm install --prefer-offline --no-audit && npm run build
@@ -48,7 +48,7 @@ RUN cd ui-tui/packages/hermes-ink && \
     ls -l dist/ink-bundle.js
 
 # Now build the rest of ui-tui
-RUN cd ui-tui && npm run build
+RUN cd ui-tui && npm install --prefer-offline --no-audit && npx tsc -p tsconfig.build.json && chmod +x dist/entry.js
 
 # ---------- Permissions ----------
 # Make install dir world-readable so any HERMES_UID can read it at runtime.
