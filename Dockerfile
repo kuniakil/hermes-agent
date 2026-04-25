@@ -27,18 +27,20 @@ COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/loc
 WORKDIR /opt/hermes
 
 # ---------- Layer-cached dependency install ----------
-# Copy only package manifests first so npm install + Playwright are cached
-# unless the lockfiles themselves change.
+# Copy package manifests and local dependencies for caching
 COPY package.json package-lock.json ./
 COPY web/package.json web/package-lock.json web/
 COPY ui-tui/package.json ui-tui/package-lock.json ui-tui/
+# ui-tui has a local file dependency on @hermes/ink
+COPY ui-tui/packages ui-tui/packages
 
 # Use --prefer-offline and --no-audit to reduce memory/network load
-RUN npm install --prefer-offline --no-audit && \
-    npx playwright install --with-deps chromium --only-shell && \
-    (cd web && npm install --prefer-offline --no-audit) && \
-    (cd ui-tui && npm install --prefer-offline --no-audit) && \
-    npm cache clean --force
+# Splitting into multiple RUNs helps manage peak memory pressure on CI runners
+RUN npm install --prefer-offline --no-audit
+RUN npx playwright install --with-deps chromium --only-shell
+RUN cd web && npm install --prefer-offline --no-audit
+RUN cd ui-tui && npm install --prefer-offline --no-audit
+RUN npm cache clean --force
 
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
