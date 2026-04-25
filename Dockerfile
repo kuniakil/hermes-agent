@@ -48,6 +48,10 @@ COPY --chown=hermes:hermes . .
 
 # Build web dashboard and TUI components
 RUN cd web && npm run build
+# Ensure the local ink-bundle is built explicitly to avoid workspace link race conditions
+RUN cd ui-tui/packages/hermes-ink && \
+    mkdir -p dist && \
+    npx esbuild src/entry-exports.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/ink-bundle.js
 RUN cd ui-tui && npm run build
 
 # ---------- Python virtualenv ----------
