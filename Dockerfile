@@ -26,33 +26,22 @@ COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/loc
 
 WORKDIR /opt/hermes
 
-# ---------- Layer-cached dependency install ----------
-# Copy package manifests and local dependencies for caching
-COPY package.json package-lock.json ./
-COPY web/package.json web/package-lock.json web/
-COPY ui-tui/package.json ui-tui/package-lock.json ui-tui/
-# ui-tui has a local file dependency on @hermes/ink
-COPY ui-tui/packages ui-tui/packages
-
-# Use --prefer-offline and --no-audit to reduce memory/network load
-# Splitting into multiple RUNs helps manage peak memory pressure on CI runners
-RUN npm install --prefer-offline --no-audit
-RUN npx playwright install --with-deps chromium --only-shell
-RUN cd web && npm install --prefer-offline --no-audit
-RUN cd ui-tui && npm install --prefer-offline --no-audit
-RUN npm cache clean --force
-
 # ---------- Source code ----------
-# .dockerignore excludes node_modules, so the installs above survive.
+# Copy all source files first
 COPY --chown=hermes:hermes . .
 
-# Build web dashboard and TUI components
-RUN cd web && npm run build
-# Ensure the local ink-bundle is built explicitly to avoid workspace link race conditions
-RUN cd ui-tui/packages/hermes-ink && \
-    mkdir -p dist && \
-    npx esbuild src/entry-exports.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/ink-bundle.js
-RUN cd ui-tui && npm run build
+# ---------- Build dependencies and assets ----------
+# Use BuildKit cache mounts if possible, but standard RUN is safer for now
+# We perform installs and builds AFTER copy to ensure node_modules are correctly
+# populated and not excluded by .dockerignore during a COPY step.
+RUN npm install --prefer-offline --no-audit && \
+    npx playwright install --with-deps chromium --only-shell && \
+    (cd web && npm install --prefer-offline --no-audit && npm run build) && \
+    (cd ui-tui && npm install --prefer-offline --no-audit && npm run build)
+
+# CRITICAL VERIFICATION: Ensure the TUI bundle was actually created.
+# If this file is missing, the build will FAIL here, preventing a broken push.
+RUN ls -l /opt/hermes/ui-tui/node_modules/@hermes/ink/dist/ink-bundle.js || (echo "ERROR: ink-bundle.js missing!" && exit 1)
 
 # ---------- Python virtualenv ----------
 RUN chown hermes:hermes /opt/hermes
