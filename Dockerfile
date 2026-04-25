@@ -34,16 +34,16 @@ COPY --chown=hermes:hermes . .
 RUN npm install --prefer-offline --no-audit && \
     npx playwright install --with-deps chromium --only-shell
 
+# Install esbuild globally to ensure it is always in the PATH for builds
+RUN npm install -g esbuild
+
 # Build web dashboard
 RUN cd web && npm install --prefer-offline --no-audit && npm run build
 
 # Build TUI - we must ensure @hermes/ink is built first to produce ink-bundle.js
-# We use npx to ensure esbuild from node_modules is used.
-RUN cd ui-tui && \
-    npm install --prefer-offline --no-audit && \
-    cd packages/hermes-ink && \
+RUN cd ui-tui/packages/hermes-ink && \
     mkdir -p dist && \
-    ../../node_modules/.bin/esbuild src/entry-exports.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/ink-bundle.js && \
+    esbuild src/entry-exports.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/ink-bundle.js && \
     ls -l dist/ink-bundle.js
 
 # Now build the rest of ui-tui
@@ -51,6 +51,7 @@ RUN cd ui-tui && npm run build
 
 # CRITICAL VERIFICATION: Check the final bundle location
 RUN ls -l /opt/hermes/ui-tui/node_modules/@hermes/ink/dist/ink-bundle.js || \
+    ls -l /opt/hermes/ui-tui/packages/hermes-ink/dist/ink-bundle.js || \
     (echo "CRITICAL: ink-bundle.js still missing!" && exit 1)
 
 # ---------- Python virtualenv ----------
