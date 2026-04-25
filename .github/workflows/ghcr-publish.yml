@@ -2,6 +2,11 @@ name: Build and Push to GHCR
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Image tag name (e.g. v2026.4.23). If empty, uses branch/tag name.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -26,12 +31,16 @@ jobs:
       - name: Get version tag
         id: vars
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [ "$TAG" != "$GITHUB_REF" ]; then
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          # Use input if provided, otherwise check if it's a tag, otherwise use latest
+          INPUT_TAG="${{ github.event.inputs.tag_name }}"
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
           else
-            echo "tag=latest" >> $GITHUB_OUTPUT
+            TAG="latest"
           fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -95,10 +104,15 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create $(printf 'ghcr.io/${{ github.repository_owner }}/hermes-agent@sha256:%s ' *) \
-            --tag ghcr.io/${{ github.repository_owner }}/hermes-agent:latest \
-            --tag ghcr.io/${{ github.repository_owner }}/hermes-agent:${{ needs.build-and-push.outputs.tag }}
+          TAG="${{ needs.build-and-push.outputs.tag }}"
+          # Always push latest, plus the specific tag if it's not latest
+          TAGS="--tag ghcr.io/${{ github.repository_owner }}/hermes-agent:latest"
+          if [ "$TAG" != "latest" ]; then
+            TAGS="$TAGS --tag ghcr.io/${{ github.repository_owner }}/hermes-agent:$TAG"
+          fi
+          
+          docker buildx imagetools create $(printf 'ghcr.io/${{ github.repository_owner }}/hermes-agent@sha256:%s ' *) $TAGS
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hermes-agent:${{ needs.build-and-push.outputs.tag }}
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hermes-agent:latest
