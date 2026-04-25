@@ -27,21 +27,31 @@ COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/loc
 WORKDIR /opt/hermes
 
 # ---------- Source code ----------
-# Copy all source files first
 COPY --chown=hermes:hermes . .
 
 # ---------- Build dependencies and assets ----------
-# Use BuildKit cache mounts if possible, but standard RUN is safer for now
-# We perform installs and builds AFTER copy to ensure node_modules are correctly
-# populated and not excluded by .dockerignore during a COPY step.
+# Install dependencies for everything
 RUN npm install --prefer-offline --no-audit && \
-    npx playwright install --with-deps chromium --only-shell && \
-    (cd web && npm install --prefer-offline --no-audit && npm run build) && \
-    (cd ui-tui && npm install --prefer-offline --no-audit && npm run build)
+    npx playwright install --with-deps chromium --only-shell
 
-# CRITICAL VERIFICATION: Ensure the TUI bundle was actually created.
-# If this file is missing, the build will FAIL here, preventing a broken push.
-RUN ls -l /opt/hermes/ui-tui/node_modules/@hermes/ink/dist/ink-bundle.js || (echo "ERROR: ink-bundle.js missing!" && exit 1)
+# Build web dashboard
+RUN cd web && npm install --prefer-offline --no-audit && npm run build
+
+# Build TUI - we must ensure @hermes/ink is built first to produce ink-bundle.js
+# We use npx to ensure esbuild from node_modules is used.
+RUN cd ui-tui && \
+    npm install --prefer-offline --no-audit && \
+    cd packages/hermes-ink && \
+    mkdir -p dist && \
+    ../../node_modules/.bin/esbuild src/entry-exports.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/ink-bundle.js && \
+    ls -l dist/ink-bundle.js
+
+# Now build the rest of ui-tui
+RUN cd ui-tui && npm run build
+
+# CRITICAL VERIFICATION: Check the final bundle location
+RUN ls -l /opt/hermes/ui-tui/node_modules/@hermes/ink/dist/ink-bundle.js || \
+    (echo "CRITICAL: ink-bundle.js still missing!" && exit 1)
 
 # ---------- Python virtualenv ----------
 RUN chown hermes:hermes /opt/hermes
