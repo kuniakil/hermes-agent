@@ -28,6 +28,8 @@ if [ -f /opt/data/.env ]; then
     # Unset SSH_PUBLIC_KEY to avoid "bad variable name" errors (has spaces)
     unset SSH_PUBLIC_KEY
 fi
+# Add hermes to PATH so "hermes --tui" works without full path
+export PATH="/opt/hermes/.venv/bin:$PATH"
 EOF
 
 # Create .profile for sh login shells
@@ -39,6 +41,8 @@ if [ -f /opt/data/.env ]; then
     set +a
     unset SSH_PUBLIC_KEY
 fi
+# Add hermes to PATH so "hermes --tui" works without full path
+export PATH="/opt/hermes/.venv/bin:$PATH"
 EOF
 
 # Start SSH daemon
