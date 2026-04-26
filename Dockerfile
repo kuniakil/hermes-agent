@@ -17,6 +17,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential nodejs npm python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client openssh-server docker-cli tini && \
+    mkdir -p /var/run/sshd && ssh-keygen -A && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user for runtime; UID can be overridden via HERMES_UID at runtime

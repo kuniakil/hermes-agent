@@ -1,29 +1,47 @@
 #!/bin/bash
 set -e
 
-# Setup SSH public key if provided
-if [ -n "$SSH_PUBLIC_KEY" ]; then
-    # Home directory for hermes is /opt/data by default
-    HERMES_HOME_DIR=$(getent passwd hermes | cut -d: -f6)
-    SSH_DIR="$HERMES_HOME_DIR/.ssh"
-    
-    mkdir -p "$SSH_DIR"
-    echo "$SSH_PUBLIC_KEY" > "$SSH_DIR/authorized_keys"
-    chmod 700 "$SSH_DIR"
-    chmod 600 "$SSH_DIR/authorized_keys"
-    chown -R hermes:hermes "$SSH_DIR"
-    echo "SSH public key configured for hermes user."
+# hermes user home is /opt/data (not /home/hermes)
+mkdir -p /opt/data/.ssh
+
+# Strip surrounding quotes from SSH_PUBLIC_KEY if present
+# (SSH_PUBLIC_KEY="ssh-ed25519 ... mlee-macbook" → ssh-ed25519 ... mlee-macbook)
+SSH_KEY_CLEAN=$(echo "$SSH_PUBLIC_KEY" | sed 's/^"//;s/"$//')
+echo "$SSH_KEY_CLEAN" > /opt/data/.ssh/authorized_keys
+chmod 600 /opt/data/.ssh/authorized_keys
+chown -R hermes:hermes /opt/data/.ssh
+
+# Sync config.yaml so TUI finds it at /opt/data/.hermes/config.yaml
+# (hermes config path returns /opt/data/.hermes/config.yaml)
+cp /opt/data/config.yaml /opt/data/.hermes/config.yaml 2>/dev/null || true
+
+# Change hermes shell from /bin/sh to /bin/bash
+usermod -s /bin/bash hermes
+
+# Create .bashrc to auto-source .env for SSH bash sessions
+cat > /opt/data/.bashrc <<'EOF'
+# Auto-source environment variables for SSH login
+if [ -f /opt/data/.env ]; then
+    set -a  # auto-export all variables
+    . /opt/data/.env
+    set +a
+    # Unset SSH_PUBLIC_KEY to avoid "bad variable name" errors (has spaces)
+    unset SSH_PUBLIC_KEY
 fi
+EOF
 
-# SSHD runtime directory
-mkdir -p /var/run/sshd
+# Create .profile for sh login shells
+cat > /opt/data/.profile <<'EOF'
+# Auto-source environment variables for sh login
+if [ -f /opt/data/.env ]; then
+    set -a
+    . /opt/data/.env
+    set +a
+    unset SSH_PUBLIC_KEY
+fi
+EOF
 
-# Generate host keys if they don't exist
-ssh-keygen -A
-
-# Start sshd in the background
-echo "Starting sshd..."
+# Start SSH daemon
 /usr/sbin/sshd
 
-# Hand off to the original entrypoint
-exec /opt/hermes/docker/entrypoint.sh "$@"
+exec /opt/hermes/docker/entrypoint.sh
