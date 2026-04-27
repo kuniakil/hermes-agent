@@ -48,4 +48,4 @@ EOF
 # Start SSH daemon
 /usr/sbin/sshd
 
-exec /opt/hermes/docker/entrypoint.sh
+exec /opt/hermes/docker/entrypoint.sh "$@"
