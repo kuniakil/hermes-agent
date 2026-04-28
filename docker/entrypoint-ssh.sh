@@ -46,6 +46,7 @@ export PATH="/opt/hermes/.venv/bin:$PATH"
 EOF
 
 # Start SSH daemon
+mkdir -p /run/sshd
 /usr/sbin/sshd
 
 exec /opt/hermes/docker/entrypoint.sh "$@"
