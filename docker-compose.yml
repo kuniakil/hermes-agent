@@ -1,6 +1,6 @@
 services:
   hermes:
-    image: ghcr.io/kuniakil/hermes-agent:v2026.4.23
+    image: ghcr.io/kuniakil/hermes-agent:v2026.4.30
     container_name: hermes-agent
     ports:
       - "2222:22"
@@ -9,6 +9,8 @@ services:
     environment:
       - HERMES_HOME=/opt/data
       - TZ=Asia/Taipei
+      - HERMES_UID=${HERMES_UID:-10000}
+      - HERMES_GID=${HERMES_GID:-10000}
     env_file:
       - ./data/.env
     command: gateway run

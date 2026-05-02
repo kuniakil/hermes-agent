@@ -14,9 +14,10 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Install system dependencies in one layer, clear APT cache
 # tini reaps orphaned zombie processes (MCP stdio subprocesses, git, bun, etc.)
+# that would otherwise accumulate when hermes runs as PID 1. See #15012.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential nodejs npm python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client openssh-server docker-cli tini && \
+    build-essential curl nodejs npm python3 ripgrep ffmpeg gcc python3-dev libffi-dev procps git openssh-client openssh-server docker-cli tini && \
     mkdir -p /var/run/sshd && ssh-keygen -A && \
     rm -rf /var/lib/apt/lists/*
 
@@ -28,28 +29,34 @@ COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/loc
 
 WORKDIR /opt/hermes
 
+# ---------- Layer-cached dependency install ----------
+# Copy only package manifests first so npm install + Playwright are cached
+# unless the lockfiles themselves change.
+COPY package.json package-lock.json ./
+COPY web/package.json web/package-lock.json web/
+COPY ui-tui/package.json ui-tui/package-lock.json ui-tui/
+COPY ui-tui/packages/hermes-ink/package.json ui-tui/packages/hermes-ink/package-lock.json ui-tui/packages/hermes-ink/
+
+RUN npm install --prefer-offline --no-audit && \
+    npx playwright install --with-deps chromium --only-shell && \
+    (cd web && npm install --prefer-offline --no-audit) && \
+    (cd ui-tui && npm install --prefer-offline --no-audit) && \
+    npm cache clean --force
+
 # ---------- Source code ----------
+# .dockerignore excludes node_modules, so the installs above survive.
 COPY --chown=hermes:hermes . .
 
-# ---------- Build dependencies and assets ----------
-# Install dependencies for everything
-RUN npm install --prefer-offline --no-audit && \
-    npx playwright install --with-deps chromium --only-shell
-
-# Install esbuild and typescript globally to ensure they are always in the PATH for builds
-RUN npm install -g esbuild typescript
-
-# Build web dashboard
-RUN cd web && npm install --prefer-offline --no-audit && npm run build
-
-# Build TUI - we must ensure @hermes/ink is built first to produce ink-bundle.js
-RUN cd ui-tui/packages/hermes-ink && \
-    mkdir -p dist && \
-    esbuild src/entry-exports.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/ink-bundle.js && \
-    ls -l dist/ink-bundle.js
-
-# Now build the rest of ui-tui
-RUN cd ui-tui && npm install --prefer-offline --no-audit && npx tsc -p tsconfig.build.json && chmod +x dist/entry.js
+# Build browser dashboard and terminal UI assets.
+# We ensure @hermes/ink is correctly linked so TUI can find it.
+RUN cd web && npm run build && \
+    cd ../ui-tui && npm run build && \
+    rm -rf node_modules/@hermes/ink && \
+    rm -rf packages/hermes-ink/node_modules && \
+    cp -R packages/hermes-ink node_modules/@hermes/ink && \
+    npm install --omit=dev --prefer-offline --no-audit --prefix node_modules/@hermes/ink && \
+    rm -rf node_modules/@hermes/ink/node_modules/react && \
+    node --input-type=module -e "await import('@hermes/ink')"
 
 # ---------- Permissions ----------
 # Make install dir world-readable so any HERMES_UID can read it at runtime.

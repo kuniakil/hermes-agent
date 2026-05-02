@@ -72,3 +72,4 @@ website/static/api/skills-index.json
 
 # Project-specific AI context
 GEMINI.md
+models-dev-upstream/
