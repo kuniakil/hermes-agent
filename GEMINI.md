@@ -2,11 +2,11 @@
 
 本文檔記錄了本專案的特定開發規範、環境配置及技術升級歷史，供 Gemini CLI 與開發者參考。
 
-## 🚀 專案狀態 (截至 2026-04-25)
-- **核心版本**: v0.11.0 (Hermes-Agent v2026.4.23)
-- **部署環境**: Docker (MacOS 宿主機)
+## 🚀 專案狀態 (截至 2026-04-30)
+- **核心版本**: v0.12.0 (Hermes-Agent v2026.4.30)
+- **部署環境**: Docker (MacOS 宿主機) + Zeabur (VPS)
 - **遠端倉庫**: `kuniakil` (GitHub)
-- **CI/CD**: GitHub Actions (Matrix Build + Manifest Merge)
+- **CI/CD**: GitHub Actions (Multi-arch Matrix Build)
 
 ## 🛠️ 重大技術修正 (踩雷紀錄)
 
@@ -15,26 +15,24 @@
 *   **解決方案**: 
     - 重構 `Dockerfile` 確保 `COPY . .` 優先於建構步驟。
     - 全域安裝 `esbuild` 與 `typescript`。
-    - **強行手動建構**: 進入 `ui-tui/packages/hermes-ink` 顯式產出 bundle，並使用 `npx tsc` 編譯 `ui-tui`。
-*   **路徑驗證**: 建構腳本中加入了 `ls -l` 強制檢查，防止 broken image 推送到 GHCR。
+    - **正式化建構**: 於 v2026.4.30 中正式整合 `ui-tui` 的自動建構邏輯，確保影像內包含完整的 `ink-bundle.js`。
 
 ### 2. 權限與進程管理
-*   **權限修復**: 實作了 `chmod -R a+rX /opt/hermes`，解決了 Node 模組被鎖在 root 權限下導致的 `Cannot find module` 錯誤。
-*   **進程管理**: 加入了 `tini` 作為 Entrypoint 封裝，處理僵屍進程（Zombie Processes），提高長效運行穩定性。
+*   **權限修復**: 實作了 `chmod -R a+rX /opt/hermes`，解決了 Node 模組權限問題。
+*   **進程管理**: 沿用 `tini` 作為 Entrypoint 封裝，有效處理 MCP 產生的僵屍進程。
 
-### 4. SSH 服務整合與自動化 (2026-04-27)
-*   **整合問題**: 原先 SSH 啟動需手動下指令且容易遺失 `gateway run` 參數。
+### 4. SSH 服務整合與跨平台相容性 (2026-04-30 更新)
+*   **整合問題**: 原先 SSH 啟動在 Zeabur 等受限環境會因為 `/run/sshd` 目錄缺失或 Entrypoint 被繞過而失敗。
 *   **解決方案**: 
-    - 實作了 `docker/entrypoint-ssh.sh`，負責在啟動時先行拉起 `sshd`。
-    - **參數透傳**: 使用 `exec ... "$@"` 確保 `docker-compose.yml` 中的 `command` 能被正確傳遞至底層 `entrypoint.sh`，解決了 Gateway 無法自動啟動的 Bug。
-    - **環境變數自動化**: 在 `entrypoint-ssh.sh` 中加入自動生成 `.bashrc` 與 `.profile` 的邏輯，解決了 SSH 登入後無法讀取 `.env` 與 `hermes` 路徑的問題。
-*   **正式化**: 此功能已從 `ssh` 實驗分支合併回 `my-config-*` 主線，並成為正式影像 `v2026.4.23` 的標配功能，部署時只需指定 `command: gateway run` 即可自動啟動 SSH 服務。
+    - **影像層級**: 在 `entrypoint-ssh.sh` 加入 `mkdir -p /run/sshd` 保護邏輯，確保服務啟動安全。
+    - **引數透傳**: 確保 `exec ... "$@"` 完整傳遞指令，解決 `gateway run` 參數遺失問題。
+*   **正式化**: 此功能已在 `v2026.4.30` 中成為標配。
 
 ## 📋 維護與升級規範
 
 ### 1. 升級 SOP
-*   下次升級請參閱 `data/hermes_upgrade/UPGRADE_STRATEGY.md`。
-*   必須保留 `Dockerfile` 中自定義的建構順序與權限修正。
+*   **流程**: 建立新版本分支（如 `my-config-v2026.4.30`）-> 合併官方 Tag -> 解決衝突（優先保留 Dockerfile 自定義修正）-> 建構 `-upgrade` 實驗影像驗證 -> 推送正式影像。
+*   **快取優化**: 善用 GitHub Actions 的快取，同代碼不同標籤的建構應在數分鐘內完成。
 *   務必維持 GitHub Actions 中的 Matrix Build 邏輯以避免 OOM。
 
 ### 2. 嚴格影像重建規則 (Image Build Freeze) 🚨
