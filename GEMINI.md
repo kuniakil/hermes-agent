@@ -16,6 +16,9 @@
     - 重構 `Dockerfile` 確保 `COPY . .` 優先於建構步驟。
     - 全域安裝 `esbuild` 與 `typescript`。
     - **正式化建構**: 於 v2026.4.30 中正式整合 `ui-tui` 的自動建構邏輯，確保影像內包含完整的 `ink-bundle.js`。
+*   **啟動優化 (2026-05-03)**:
+    - **問題**: 儘管影像已內建 TUI，但在掛載 Volume 的環境下，Hermes 啟動時仍會因 Lockfile 微差而觸發 `npm install`，導致啟動緩慢。
+    - **解決方案**: 在 `Dockerfile` 中加入 `sed` patch，修改 `hermes_cli/main.py`。若 `dist/entry.js` 已存在，則直接跳過 `_tui_need_npm_install` 檢查，實現秒開。
 
 ### 2. 權限與進程管理
 *   **權限修復**: 實作了 `chmod -R a+rX /opt/hermes`，解決了 Node 模組權限問題。
