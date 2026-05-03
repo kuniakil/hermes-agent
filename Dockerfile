@@ -47,6 +47,15 @@ RUN npm install --prefer-offline --no-audit && \
 # .dockerignore excludes node_modules, so the installs above survive.
 COPY --chown=hermes:hermes . .
 
+# Patch: skip _tui_need_npm_install if dist/entry.js already exists (pre-built in image)
+RUN sed -i \
+    '/^    ink = root \/ "node_modules" \/ "@hermes" \/ "ink" \/ "package.json"$/a\
+\    # Skip install check if TUI is already built\n\
+\    dist_entry = root / "dist" / "entry.js"\n\
+\    if dist_entry.is_file():\n\
+\        return False' \
+    /opt/hermes/hermes_cli/main.py
+
 # Build browser dashboard and terminal UI assets.
 # We ensure @hermes/ink is correctly linked so TUI can find it.
 RUN cd web && npm run build && \
