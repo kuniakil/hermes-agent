@@ -49,9 +49,12 @@ EOF
 mkdir -p /run/sshd
 /usr/sbin/sshd
 
-# Clean up stale runtime locks that may be root-owned from a previous
+# Clean up stale files that may be root-owned from a previous
 # deployment that bypassed the entrypoint (e.g. Zeabur with direct command).
 # These would otherwise cause PermissionError when hermes user tries to write.
+# Also ensure the logs directory is writable by fixing ownership.
 rm -f /opt/data/gateway.lock /opt/data/*.lock 2>/dev/null || true
+chown -R hermes:hermes /opt/data/logs 2>/dev/null || true
+chmod -R u+rwX /opt/data/logs 2>/dev/null || true
 
 exec /opt/hermes/docker/entrypoint.sh "$@"
