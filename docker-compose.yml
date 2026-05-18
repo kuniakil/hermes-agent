@@ -1,6 +1,6 @@
 services:
   hermes:
-    image: ghcr.io/kuniakil/hermes-agent:${HERMES_IMAGE_VERSION:-v2026.5.16}
+    image: ${HERMES_IMAGE}
     container_name: hermes-agent
     ports:
       - "2222:22"
