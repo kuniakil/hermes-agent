@@ -56,4 +56,9 @@ mkdir -p /run/sshd
 rm -f /opt/data/gateway.lock /opt/data/*.lock 2>/dev/null || true
 chown -R hermes:hermes /opt/data
 
+# Make faster-whisper venv site-packages available to Hermes Python
+# This avoids rebuilding the Docker image when faster-whisper is installed
+# via the lazy_deps installer at /opt/data/venvs/faster-whisper.
+export PYTHONPATH="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages:$PYTHONPATH"
+
 exec /opt/hermes/docker/entrypoint.sh "$@"
