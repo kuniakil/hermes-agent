@@ -64,16 +64,16 @@ fi
 # --- Execute official entrypoint ---
 # If we're PID 1 (container is running directly as entrypoint), use s6-overlay.
 # If we're NOT PID 1 (Zeabur/managed platform runs something else as PID 1),
-# skip s6-overlay and directly execute main-wrapper.sh.
-echo "[entrypoint-ssh] Delegating to main-wrapper.sh with args: $@"
+# skip s6-overlay and directly execute hermes.
+echo "[entrypoint-ssh] Delegating with args: $@"
 if [ $$ -eq 1 ]; then
     # We are PID 1 - use s6-overlay for full functionality
     echo "[entrypoint-ssh] Running as PID 1, using s6-overlay /init"
     exec /init /opt/hermes/docker/main-wrapper.sh "$@"
 else
-    # We are NOT PID 1 (e.g. Zeabur) - skip s6-overlay, run directly
+    # We are NOT PID 1 (e.g. Zeabur) - skip s6-overlay, run directly as hermes user
     echo "[entrypoint-ssh] Not PID 1 (Zeabur/multi-process env), skipping s6-overlay"
-    # Still need to setup UID/GID since s6-overlay won't do it
+    # Setup UID/GID remap
     if [ -n "${HERMES_UID:-}" ] && [ "$HERMES_UID" != "$(id -u hermes)" ]; then
         usermod -u "$HERMES_UID" hermes
     fi
@@ -82,5 +82,9 @@ else
     fi
     # Fix ownership
     chown -R hermes:hermes "$HERMES_HOME" 2>/dev/null || true
-    exec /opt/hermes/docker/main-wrapper.sh "$@"
+    # Zeabur: execute hermes directly as hermes user, no main-wrapper.sh
+    export HOME=/opt/data
+    export PATH="/opt/hermes/.venv/bin:$PATH"
+    cd /opt/data
+    exec su-exec hermes /opt/hermes/.venv/bin/hermes "$@"
 fi
