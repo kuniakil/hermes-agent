@@ -86,5 +86,5 @@ else
     export HOME=/opt/data
     export PATH="/opt/hermes/.venv/bin:$PATH"
     cd /opt/data
-    exec su-exec hermes /opt/hermes/.venv/bin/hermes "$@"
+    exec su -s /bin/sh hermes -c "exec /opt/hermes/.venv/bin/hermes $@"
 fi
