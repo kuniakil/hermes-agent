@@ -73,6 +73,50 @@ EOF
     exit 1
 fi
 
+# --- SSH server setup ---
+# Setup SSH for remote access. This runs early because sshd needs
+# the hermes user to exist first (before UID/GID remap below).
+if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
+    echo "[stage2] Setting up SSH server"
+    mkdir -p /run/sshd
+    mkdir -p "$HERMES_HOME/.ssh"
+
+    # Write authorized_keys from SSH_PUBLIC_KEY env var
+    SSH_KEY_CLEAN=$(echo "$SSH_PUBLIC_KEY" | sed 's/^"//;s/"$//')
+    echo "$SSH_KEY_CLEAN" > "$HERMES_HOME/.ssh/authorized_keys"
+    chmod 600 "$HERMES_HOME/.ssh/authorized_keys"
+    chown -R hermes:hermes "$HERMES_HOME/.ssh"
+
+    # Create .bashrc to auto-source .env for SSH sessions
+    cat > "$HERMES_HOME/.bashrc" <<'EOF'
+# Auto-source environment variables for SSH login
+if [ -f /opt/data/.env ]; then
+    set -a  # auto-export all variables
+    . /opt/data/.env
+    set +a
+    unset SSH_PUBLIC_KEY
+fi
+export PATH="/opt/hermes/.venv/bin:$PATH"
+EOF
+    chown hermes:hermes "$HERMES_HOME/.bashrc"
+
+    # Create .profile for sh login shells
+    cat > "$HERMES_HOME/.profile" <<'EOF'
+if [ -f /opt/data/.env ]; then
+    set -a
+    . /opt/data/.env
+    set +a
+    unset SSH_PUBLIC_KEY
+fi
+export PATH="/opt/hermes/.venv/bin:$PATH"
+EOF
+    chown hermes:hermes "$HERMES_HOME/.profile"
+
+    # Start sshd in background
+    /usr/sbin/sshd
+    echo "[stage2] SSH server started"
+fi
+
 # --- Bootstrap HERMES_HOME as root ---
 # Create the directory (and any missing parents) while we still have root
 # privileges so the chown checks below see real metadata and the later
@@ -564,3 +608,11 @@ if [ -z "${AGENT_BROWSER_EXECUTABLE_PATH:-}" ] && \
 fi
 
 echo "[stage2] Setup complete; starting user services"
+
+# --- PYTHONPATH for faster-whisper ---
+# Make faster-whisper venv site-packages available to Hermes Python.
+# This allows Hermes to find the module without rebuilding the Docker image.
+if [ -d "/opt/data/venvs/faster-whisper/lib/python3.13/site-packages" ]; then
+    export PYTHONPATH="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages:$PYTHONPATH"
+    echo "[stage2] Added faster-whisper to PYTHONPATH"
+fi
