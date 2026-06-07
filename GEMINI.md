@@ -22,11 +22,15 @@
    ```bash
    git fetch upstream --tags
    ```
-2. **執行 Rebase / Cherry-pick**：將目前的 `main` 分支 rebase 到目標官方 Tag。
+2. **建立並切換至新版本分支**（以目標官方 Release Tag 為起點，維持線性歷史且不修改舊分支）：
    ```bash
-   git rebase v0.15.0
+   git checkout -b my-config-v[新版本號] v[新版本號]
    ```
-   *若有衝突，由 AI 協助分析並解決，優先保留個人自定義邏輯與配置文件。*
+3. **櫻桃挑選（Cherry-pick）自定義 commits**（依時間序從舊到新套用）：
+   ```bash
+   git cherry-pick <commit-hash-1> <commit-hash-2> ...
+   ```
+   *註：絕不使用 `git merge`，確保 Commit 歷史為純粹的單一軸線。*
 
 ### 第三階段：測試與觸發 GitHub CI/CD
 1. **測試確認**：確保本地執行 `scripts/run_tests.sh` 通過（僅進行 Python 單元測試，**不**在 Mac 本地執行耗時的 Docker image 建置）。
@@ -38,6 +42,22 @@
    ```bash
    gh workflow run ghcr-publish.yml --repo [帳號]/hermes-agent --ref my-config-v[新版本號] -f tag_name=v[新版本號]
    ```
+
+## 3. 常見衝突與合併指引 (Conflict Resolution Guide)
+
+當升級時在 `cherry-pick` 自定義提交發生衝突，請依照以下原則進行手動合併：
+
+### A. `Dockerfile` 衝突
+* **衝突場景**：官方 upstream 更新了系統套件（`apt-get install` 內容增加），與自定義的 SSH 套件安裝與 `NODE_OPTIONS` 設定衝突。
+* **解決方式**：
+  1. 將官方新增的依賴套件（如 `iputils-ping` 等）與我們自定義的 `openssh-server` **合併在同一個 `apt-get install` 列表內**。
+  2. 確保 `mkdir -p /var/run/sshd && ssh-keygen -A` 初始化指令緊隨其後。
+  3. 保留自定義的 Node 記憶體限制環境變數 `ENV NODE_OPTIONS="..."`。
+
+### B. `docker/stage2-hook.sh` 衝突
+* **衝突場景**：官方 upstream 增加了對 `docker run --user` 的安全防錯檢測，與自定義的 SSH 伺服器啟動邏輯位置重疊。
+* **解決方式**：
+  * **兩者共存**：保留官方的 `--user` 啟動防錯檢測（若不合規會 exit 1）。在其下方（確認以 root 引導後），再安全地植入我們的 SSH 伺服器配置與 `/usr/sbin/sshd` 背景啟動邏輯。
 
 ---
 
