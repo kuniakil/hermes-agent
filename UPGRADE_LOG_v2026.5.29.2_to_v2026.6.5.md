@@ -56,3 +56,17 @@
 | `tests/test_hermes_logging.py` | ✅ PASS | 59 個測試全數通過 |
 | `tests/test_hermes_state.py` | ✅ PASS | 256 個測試全數通過 |
 | Docker helper scripts (非 build 測試) | ✅ PASS | 8 個測試全數通過 |
+
+## Subsequent Hotfixes & Enhancements (後續修正與優化)
+
+為了因應本地不編譯 Docker 映像檔的決策，以及解決 TUI 透過 SSH 啟動時的依賴編譯崩潰問題，後續進行了以下修正與優化：
+
+1. **環境變數更新** (`8951c54ba`)：
+   - 將 `.env` 的 `HERMES_IMAGE` 正式更新為新版本標籤 `v2026.6.5`。
+2. **SOP 流程規範優化** (`389b60d87` 與 `7a39561d7`)：
+   - 於 [GEMINI.md](file:///Users/mlee/hermes/GEMINI.md) 寫入「自官方 Tag 建立新分支再 cherry-pick」的 Git 策略，排除 `git merge` 以維持線性歷史與回退彈性。
+   - 寫入「不於 Mac 本地建置映像檔，統一推送由 GitHub Actions CI/CD 編譯與手動觸發」之流程。
+   - 彙整新增「常見衝突與合併指引」，以供未來升級時的 AI Agent 參考。
+3. **補入 C/C++ 工具鏈** (`54ef05046`)：
+   - **修正問題**：TUI 啟動時如無預編譯包會回退執行 `npm install`。但在缺少工具鏈的情況下，編譯 `node-pty` 會因為找不到 `make`/`g++` 導致連線中斷。
+   - **解決方式**：在 [Dockerfile](file:///Users/mlee/hermes/Dockerfile) 中補上 `g++`、`make` 與 `build-essential`。
