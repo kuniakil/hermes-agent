@@ -28,12 +28,15 @@
    ```
    *若有衝突，由 AI 協助分析並解決，優先保留個人自定義邏輯與配置文件。*
 
-### 第三階段：建立新版里程碑分支
-1. **測試確認**：確保本地執行 `scripts/run_tests.sh` 通過。
-2. **建立新版分支並推回**：
+### 第三階段：測試與觸發 GitHub CI/CD
+1. **測試確認**：確保本地執行 `scripts/run_tests.sh` 通過（僅進行 Python 單元測試，**不**在 Mac 本地執行耗時的 Docker image 建置）。
+2. **提交與推回**：將自訂 commit、更新後的 `.env` 以及新版升級日誌推送至您的 GitHub 倉庫。
    ```bash
-   git branch my-config-v0.15.0
-   git push origin my-config-v0.15.0
+   git push [remote名稱] my-config-v[新版本號]
+   ```
+3. **觸發 GitHub CI/CD**：使用 GitHub CLI 觸發 `ghcr-publish.yml` 來進行多平台映像檔建置，並指定對應的 Docker image tag。
+   ```bash
+   gh workflow run ghcr-publish.yml --repo [帳號]/hermes-agent --ref my-config-v[新版本號] -f tag_name=v[新版本號]
    ```
 
 ---
