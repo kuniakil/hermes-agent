@@ -97,6 +97,12 @@ if [ -f /opt/data/.env ]; then
     unset SSH_PUBLIC_KEY
 fi
 export PATH="/opt/hermes/.venv/bin:$PATH"
+# HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle,
+# which sidesteps the runtime `npm install` in _tui_need_npm_install().
+# Without this, an SSH login shell (a fresh process tree that does NOT
+# inherit container PID 1's env) hits EACCES trying to write to the
+# read-only /opt/hermes/node_modules. See v2026.6.19 TUI EACCES fix.
+export HERMES_TUI_DIR=/opt/hermes/ui-tui
 EOF
     chown hermes:hermes "$HERMES_HOME/.bashrc"
 
@@ -109,6 +115,9 @@ if [ -f /opt/data/.env ]; then
     unset SSH_PUBLIC_KEY
 fi
 export PATH="/opt/hermes/.venv/bin:$PATH"
+# HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle.
+# See comment in .bashrc above.
+export HERMES_TUI_DIR=/opt/hermes/ui-tui
 EOF
     chown hermes:hermes "$HERMES_HOME/.profile"
 
