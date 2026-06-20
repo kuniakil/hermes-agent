@@ -58,6 +58,7 @@
 | 13 | `af397b491` | `54ef05046` | fix: add g++ make build-essential C/C++ toolchain to Dockerfile |
 | 14 | `9965547b8` | `bcdc20710` | docs: update upgrade log with hotfixes and C/C++ toolchain |
 | 15 | `2d0cbaae3` | —            | chore: bump HERMES_IMAGE tag to v2026.6.19 |
+| 16 | `e3c554e24` | —            | fix(docker): export HERMES_TUI_DIR in SSH session rc to skip runtime npm install |
 
 ## Conflict Resolution
 
@@ -94,6 +95,77 @@
   gcc g++ make cmake build-essential python3-dev ...
   ```
 
+## Hotfix: SSH `hermes --tui` EACCES（commit #16, 2026-06-20）
+
+### 問題
+
+從 SSH session 跑 `hermes --tui` 會印出：
+
+```
+$ hermes --tui
+Installing TUI dependencies…
+npm install failed.
+```
+
+第二行實際上是空的——`hermes_cli/main.py` 用 `--silent` 跑 npm install，stderr 被吞掉。
+
+### 真正的 root cause
+
+`HERMES_TUI_DIR=/opt/hermes/ui-tui` 是 Dockerfile `ENV` 設定的（line 293），但 **Dockerfile `ENV` 只作用於 container PID 1 跟它的 child process tree**。SSH login shell 是一個全新的 process tree，從 sshd 啟動，**不繼承** PID 1 的 env，所以在 SSH session 內 `HERMES_TUI_DIR` 是空字串。
+
+`hermes_cli/main.py:_make_tui_argv()` 的 prebuilt-bundle fast path 條件是 `if ext_dir and (p / "dist" / "entry.js").is_file()`（line 1687-1692）。沒有 `HERMES_TUI_DIR` 就走不到 fast path，fall through 到 line 1714 的「runtime npm install if needed」分支，npm install 試圖寫入 `/opt/hermes/node_modules`——但 Dockerfile:216 `chmod -R a-w /opt/hermes` 把整個 install tree 設為 read-only，hermes user (uid 10000) 非 owner → `EACCES: permission denied, mkdir '/opt/hermes/node_modules/@emnapi/core'`。
+
+### 為什麼之前 v0.16.x 沒撞到
+
+官方 v0.17.0（PR #47490 "Harden hosted Docker install tree against self-modification"）撤掉了 PR #21267 原來的 `chown -R hermes:hermes /opt/hermes/ui-tui /opt/hermes/node_modules`（PR #47490:50-58），並且改用「靠 `HERMES_TUI_DIR` 走 prebuilt bundle fast path」的設計。官方假設 `hermes --tui` 永遠是從 container 內 process 啟動（有完整 env），沒考慮 SSH login shell 這個 edge case。我們 fork 因為 cherry-pick 了 SSH server（commit #1），這個 edge case 才被觸發。
+
+### 修法
+
+在 `docker/stage2-hook.sh` 寫 `.bashrc` / `.profile` 的 heredoc 內各加一行 `export HERMES_TUI_DIR=/opt/hermes/ui-tui`。stage2-hook 在 container first boot 透過 `/etc/cont-init.d/01-hermes-setup` 執行一次（line 79 的 `if [ -n "${SSH_PUBLIC_KEY:-}" ]` 區塊內），把 `$HERMES_HOME/.bashrc` 跟 `$HERMES_HOME/.profile` 寫進去。SSH login shell 是 login shell，會 source 這兩個 rc 檔，自動拿到 env。
+
+### Diff（~9 行）
+
+```diff
+--- a/docker/stage2-hook.sh
++++ b/docker/stage2-hook.sh
+@@ -97,6 +97,12 @@ if [ -f /opt/data/.env ]; then
+     unset SSH_PUBLIC_KEY
+ fi
+ export PATH="/opt/hermes/.venv/bin:$PATH"
++# HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle,
++# which sidesteps the runtime `npm install` in _tui_need_npm_install().
++# Without this, an SSH login shell (a fresh process tree that does NOT
++# inherit container PID 1's env) hits EACCES trying to write to the
++# read-only /opt/hermes/node_modules. See v2026.6.19 TUI EACCES fix.
++export HERMES_TUI_DIR=/opt/hermes/ui-tui
+ EOF
+     chown hermes:hermes "$HERMES_HOME/.bashrc"
+ 
+@@ -109,6 +115,9 @@ if [ -f /opt/data/.env ]; then
+     unset SSH_PUBLIC_KEY
+ fi
+ export PATH="/opt/hermes/.venv/bin:$PATH"
++# HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle.
++# See comment in .bashrc above.
++export HERMES_TUI_DIR=/opt/hermes/ui-tui
+ EOF
+```
+
+### 衝突評估
+
+零衝突。既有 4 個 Zeabur custom commit 沒碰 stage2-hook.sh line 90-115 的 heredoc 區段。官方 v0.18.0 萬一改了這段，升級時 3-way merge 處理——是已知 SOP pattern。
+
+### 部署 note：K3s `IfNotPresent` 不會自動感知 tag 覆蓋
+
+K3s 預設 `imagePullPolicy: IfNotPresent`，**只看 image 是否在 node local cache**，**不比對 digest**。所以 CI/CD push 新 image 覆蓋 `v2026.6.19` tag 後，kubelet 不會自動 pull。workaround：
+
+```bash
+docker rmi ghcr.io/kuniakil/hermes-agent:v2026.6.19
+kubectl apply -k hermes/overlays/mac
+```
+
+砍掉本地 cache 後，pod 重啟時 K3s 必須去 registry pull。Pull 耗時約 4m11s（1.27 GB）。未來可考慮改 `imagePullPolicy: Always` 或 bump tag 每次 build。
+
 ## Testing Results
 
 本次升級採用 **不在 Mac 本地建置 Docker image** 的策略，直接推送至 GitHub 由 CI/CD 處理：
@@ -101,9 +173,12 @@
 | Test Target | Status | Notes |
 |-------------|--------|-------|
 | 本地 Python 單元測試 | ⏭️ SKIP | 環境運行於 K8s，不在本地執行 |
-| GitHub Actions `ghcr-publish.yml` | 🔄 Building | amd64 + arm64 多平台建置 |
+| GitHub Actions `ghcr-publish.yml` (initial) | ✅ Success | amd64 + arm64 多平台建置 |
+| GitHub Actions `ghcr-publish.yml` (TUI hotfix) | ✅ Success | 重 build 觸發 run `27861394781`，覆蓋 `v2026.6.19` tag |
+| K8s rollout (TUI hotfix) | ✅ Verified | `docker rmi` + `kubectl apply -k` 後新 pod image digest = `sha256:e5f44f981fd9...`；SSH 進去 `hermes --tui` 正常啟動 TUI banner |
 
-CI/CD Run: https://github.com/kuniakil/hermes-agent/actions/runs/27854031850
+CI/CD Run (initial): https://github.com/kuniakil/hermes-agent/actions/runs/27854031850
+CI/CD Run (TUI hotfix): https://github.com/kuniakil/hermes-agent/actions/runs/27861394781
 
 ## Next Upgrade SOP
 
