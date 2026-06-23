@@ -61,12 +61,6 @@ if [ -d "/opt/data/venvs/faster-whisper/lib/python3.13/site-packages" ]; then
     export PYTHONPATH="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages:$PYTHONPATH"
 fi
 
-# Auto install edge-tts using uv if not already installed (idempotent and fast)
-if [ -f "/usr/local/bin/uv" ]; then
-    echo "[entrypoint-ssh] Ensuring edge-tts is installed..."
-    /usr/local/bin/uv pip install --python /opt/hermes/.venv/bin/python edge-tts >/dev/null 2>&1 || true
-fi
-
 # --- Execute official entrypoint ---
 # If we're PID 1 (container is running directly as entrypoint), use s6-overlay.
 # If we're NOT PID 1 (Zeabur/managed platform runs something else as PID 1),
