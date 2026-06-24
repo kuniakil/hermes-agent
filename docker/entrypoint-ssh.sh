@@ -61,6 +61,13 @@ if [ -d "/opt/data/venvs/faster-whisper/lib/python3.13/site-packages" ]; then
     export PYTHONPATH="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages:$PYTHONPATH"
 fi
 
+# Allow hermes user to install lazy_deps in the venv
+if [ -d "/opt/hermes/.venv" ]; then
+    echo "[entrypoint-ssh] Granting write access on venv to hermes user..."
+    chmod -R u+w /opt/hermes/.venv
+    chown -R hermes:hermes /opt/hermes/.venv
+fi
+
 # --- Execute official entrypoint ---
 # If we're PID 1 (container is running directly as entrypoint), use s6-overlay.
 # If we're NOT PID 1 (Zeabur/managed platform runs something else as PID 1),
