@@ -504,3 +504,11 @@ if [ -d "/opt/data/venvs/faster-whisper/lib/python3.13/site-packages" ]; then
     export PYTHONPATH="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages:$PYTHONPATH"
     echo "[stage2] Added faster-whisper to PYTHONPATH"
 fi
+
+# Allow hermes user to install lazy_deps in the venv
+if [ -d "/opt/hermes/.venv" ]; then
+    echo "[stage2] Granting write access on venv to hermes user..."
+    chmod -R u+w /opt/hermes/.venv
+    chown -R hermes:hermes /opt/hermes/.venv
+fi
+
