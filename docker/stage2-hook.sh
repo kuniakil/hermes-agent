@@ -508,9 +508,7 @@ fi
 # Allow hermes user to install lazy_deps in the venv
 if [ -d "/opt/hermes/.venv" ]; then
     echo "[stage2] Granting write access on venv to hermes user..."
-    echo "[stage2] Before: $(ls -ld /opt/hermes/.venv)"
     chmod -R u+w /opt/hermes/.venv
-    chown -v -R hermes:hermes /opt/hermes/.venv
-    echo "[stage2] After: $(ls -ld /opt/hermes/.venv)"
+    chown -R hermes:hermes /opt/hermes/.venv
 fi
 
