@@ -117,54 +117,58 @@ gh workflow run ghcr-publish.yml \
 
 ### A. `Dockerfile` — apt-get install 衝突
 
-- **衝突場景**：官方新增系統套件（如 `cmake`、`iputils-ping`），與我們自定義的 `openssh-server`、`build-essential`、`ssh-keygen -A` 等在同一行衝突。
+- **衝突場景**：官方新增系統套件（如 `libatomic1`），與我們自定義的 `openssh-server`、`ssh-keygen -A` 等在同一行衝突。
 - **解決方式**：**合併雙方所有套件**在同一個 `apt-get install` 列表內。
 
   ```dockerfile
   # 保留格式：官方套件 + 我們的套件，全部在同一行
   ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg \
-  gcc g++ make cmake build-essential python3-dev python3-venv libffi-dev libolm-dev \
+  gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 \
   procps git openssh-client openssh-server docker-cli xz-utils && \
-  mkdir -p /var/run/sshd && ssh-keygen -A && \   # ← 我們的，保留
+  mkdir -p /var/run/sshd && ssh-keygen -A && \
   rm -rf /var/lib/apt/lists/*
   ```
 
   確保同時保留：
   - `openssh-server`（SSH 伺服器）
-  - `g++ make cmake build-essential`（TUI npm install 編譯需要）
   - `mkdir -p /var/run/sshd && ssh-keygen -A`（SSH 初始化）
   - `ENV NODE_OPTIONS="--max-old-space-size=4096"`（記憶體限制）
+  - `libatomic1`（官方新增依賴）
 
-### B. `Dockerfile` — COPY 指令衝突
+### B. `Dockerfile` — COPY / ENTRYPOINT 衝突
 
-- **衝突場景**：cherry-pick 先後順序導致 HEAD 已有某些 COPY 行，後續 commit 認為該位置是空的。
-- **解決方式**：保留 commit 要加入的 COPY 指令（通常是 ours/theirs 都要）：
+- **衝突場景**：官方 v2026.8.3 起 ENTRYPOINT 改為 `entrypoint-dispatch.sh`（非直接 `/init`），且 Node 從 22 升級到 26（corepack 移除）。
+- **解決方式**：接受官方 `entrypoint-dispatch.sh` 和 Node 26，額外 COPY 我們的 `entrypoint-ssh.sh`：
 
   ```dockerfile
   COPY --chmod=0755 docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
+  COPY --chmod=0755 docker/entrypoint-dispatch.sh /opt/hermes/docker/entrypoint-dispatch.sh
   COPY --chmod=0755 docker/entrypoint-ssh.sh /opt/hermes/docker/entrypoint-ssh.sh
+  ENTRYPOINT [ "/opt/hermes/docker/entrypoint-dispatch.sh" ]
   ```
 
 ### C. `docker/stage2-hook.sh` 衝突
 
-- **衝突場景**：官方新增 `--user` 安全防錯檢測段落，與自定義 SSH 伺服器啟動邏輯重疊。
-- **解決方式**：**兩者共存**：保留官方的 `--user` 安全防錯，在其後補入 SSH 伺服器啟動邏輯。
+- **衝突場景**：官方新增 `tree_has_non_hermes_owner()` 和 warm-boot chown 優化，行號大幅移位。
+- **解決方式**：不要 cherry-pick 舊 commit，改為在官方版本上**手動重新插入** SSH setup block（在 `--user` 安全防錯 `fi` 之後、`Bootstrap HERMES_HOME as root` 之前）和 PYTHONPATH block（在檔案末尾 `Setup complete` 之前）。
+
+### D. `docker/entrypoint-ssh.sh` — 功能被官方覆蓋
+
+- **衝突場景**：官方 `entrypoint-dispatch.sh` 已原生處理 non-PID 1 環境（Zeabur、Fly Machines 等）。
+- **解決方式**：將 `entrypoint-ssh.sh` 簡化為純粹委派給 `entrypoint-dispatch.sh` 的包裝腳本，僅保留向後相容性。SSH 啟動邏輯統一由 `stage2-hook.sh` 處理。
 
 ---
 
-## 4. 我們的自定義 Commits 清單（相對 v0.17.0）
+## 4. 我們的自定義 Commits 清單（相對 v2026.8.3）
 
-升級到 v2026.6.19 後，以下為套用在官方 Tag 上的所有自定義 commits：
+以下為套用在官方 `v2026.8.3` Tag 上的所有自定義 commits：
 
 | 功能 | 描述 |
 |------|------|
-| SSH into s6-overlay | Dockerfile 加入 openssh-server、ssh-keygen；stage2-hook.sh 整合 SSH 啟動 |
+| SSH + 建置工具鏈整合 | Dockerfile 加入 `openssh-server`、`ssh-keygen`、`NODE_OPTIONS`；`stage2-hook.sh` 整合 SSH 啟動 + `HERMES_TUI_DIR` export + `faster-whisper` PYTHONPATH；簡化版 `entrypoint-ssh.sh` 委派給官方 `entrypoint-dispatch.sh` |
 | `.env` with HERMES_IMAGE | docker-compose 使用的 image tag 設定 |
 | ghcr-publish workflow | GitHub Actions 自動建置並推送多平台 Docker image |
-| entrypoint-ssh.sh | Zeabur 相容性 entrypoint（處理 non-PID 1 環境） |
-| Zeabur non-PID 1 fix | 偵測非 PID 1 環境，跳過 s6-overlay，直接用 `su` 執行 |
 | docker-compose.yml | 還原為自定義版本 |
-| g++ cmake build-essential | TUI 在無預編譯包時 npm install 需要 C/C++ 工具鏈 |
 
 ---
 
