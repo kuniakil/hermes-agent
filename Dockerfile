@@ -70,9 +70,25 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
 # hermes process, the dashboard, and per-profile gateways.
 RUN apt-get -o Acquire::Retries=3 update && \
     apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-    ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 procps git openssh-client openssh-server docker-cli xz-utils && \
+    ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 procps git openssh-client openssh-server docker-cli xz-utils rsync locales && \
     mkdir -p /var/run/sshd && ssh-keygen -A && \
+    echo "C.UTF-8 UTF-8" > /etc/locale.gen && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
+    echo "zh_TW.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen && \
+    echo "LANG=C.UTF-8" > /etc/default/locale && \
+    echo "LC_ALL=C.UTF-8" >> /etc/default/locale && \
+    echo "export LANG=C.UTF-8" >> /etc/profile && \
+    echo "export LC_ALL=C.UTF-8" >> /etc/profile && \
+    echo "export LANG=C.UTF-8" >> /home/node/.bashrc 2>/dev/null || true && \
+    echo "export LC_ALL=C.UTF-8" >> /home/node/.bashrc 2>/dev/null || true && \
+    echo "export LANG=C.UTF-8" >> /root/.bashrc && \
+    echo "export LC_ALL=C.UTF-8" >> /root/.bashrc && \
     rm -rf /var/lib/apt/lists/*
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    LANGUAGE=C.UTF-8
 
 # Prefer the fixed SQLite over Debian's vulnerable libsqlite3.so.0. Keep the
 # public library name stable so both the system interpreter and the uv-created
