@@ -21,6 +21,7 @@
 | `9f8bdeb56e` | chore: restore docker-compose.yml from my-config-v2026.5.16 |
 | `c4248b3d6f` | feat: integrate SSH and build toolchain into v2026.8.3 Docker architecture |
 | `2ef6fb082a` | feat(docker): add rsync, locales, and full UTF-8 support |
+| `a6aa9622b5` | feat(docker): install full Playwright Chromium with proper permissions |
 | `6a795ae450` | chore: bump HERMES_IMAGE tag to v2026.8.13 |
 
 ## Conflicts Encountered
