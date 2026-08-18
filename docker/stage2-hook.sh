@@ -103,6 +103,19 @@ export PATH="/opt/hermes/.venv/bin:$PATH"
 # inherit container PID 1's env) hits EACCES trying to write to the
 # read-only /opt/hermes/node_modules. See v2026.6.19 TUI EACCES fix.
 export HERMES_TUI_DIR=/opt/hermes/ui-tui
+# Load runtime env vars written by stage2-hook.sh into s6 container_environment
+# (e.g. AGENT_BROWSER_EXECUTABLE_PATH, PYTHONPATH for faster-whisper).
+# SSH login shells do not inherit /run/s6/container_environment/, so we
+# read each file explicitly here. Silently skipped when absent.
+if [ -d /run/s6/container_environment ]; then
+    for _env_f in /run/s6/container_environment/*; do
+        [ -f "$_env_f" ] || continue
+        _env_key=$(basename "$_env_f")
+        _env_val=$(cat "$_env_f")
+        export "${_env_key}=${_env_val}"
+    done
+    unset _env_f _env_key _env_val
+fi
 EOF
     chown hermes:hermes "$HERMES_HOME/.bashrc"
 
@@ -118,6 +131,17 @@ export PATH="/opt/hermes/.venv/bin:$PATH"
 # HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle.
 # See comment in .bashrc above.
 export HERMES_TUI_DIR=/opt/hermes/ui-tui
+# Load runtime env vars written by stage2-hook.sh into s6 container_environment.
+# See .bashrc above for rationale.
+if [ -d /run/s6/container_environment ]; then
+    for _env_f in /run/s6/container_environment/*; do
+        [ -f "$_env_f" ] || continue
+        _env_key=$(basename "$_env_f")
+        _env_val=$(cat "$_env_f")
+        export "${_env_key}=${_env_val}"
+    done
+    unset _env_f _env_key _env_val
+fi
 EOF
     chown hermes:hermes "$HERMES_HOME/.profile"
 
@@ -671,9 +695,26 @@ fi
 # --- PYTHONPATH for faster-whisper ---
 # Make faster-whisper venv site-packages available to Hermes Python.
 # This allows Hermes to find the module without rebuilding the Docker image.
+#
+# IMPORTANT: a bare `export` here only affects this stage2 shell process and
+# is immediately lost once stage2-hook.sh exits. It does NOT propagate to
+# s6-supervised services (main-hermes, dashboard) or SSH login shells.
+# We write into /run/s6/container_environment/ so that:
+#   - with-contenv (used by all supervised services) picks it up, and
+#   - the .bashrc / .profile loop added above reads it for SSH sessions.
+# This also overrides an empty PYTHONPATH="" that an orchestrator (e.g. k8s)
+# might have injected at the container level.
 if [ -d "/opt/data/venvs/faster-whisper/lib/python3.13/site-packages" ]; then
-    export PYTHONPATH="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages:$PYTHONPATH"
-    echo "[stage2] Added faster-whisper to PYTHONPATH"
+    _fw_site="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages"
+    mkdir -p /run/s6/container_environment
+    _existing_py=$(cat /run/s6/container_environment/PYTHONPATH 2>/dev/null || true)
+    if [ -n "$_existing_py" ]; then
+        printf '%s' "${_fw_site}:${_existing_py}" > /run/s6/container_environment/PYTHONPATH
+    else
+        printf '%s' "${_fw_site}" > /run/s6/container_environment/PYTHONPATH
+    fi
+    unset _fw_site _existing_py
+    echo "[stage2] Added faster-whisper to PYTHONPATH (s6 container_environment)"
 fi
 
 echo "[stage2] Setup complete; starting user services"
