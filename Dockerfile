@@ -292,7 +292,6 @@ RUN uv sync --frozen --no-install-project \
     --extra feishu \
     --extra matrix \
     --extra voice \
-    --extra wake \
     --extra edge-tts \
     --extra exa \
     --extra firecrawl \

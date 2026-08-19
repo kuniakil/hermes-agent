@@ -16,7 +16,6 @@ RUN uv sync --frozen --no-install-project \
     --extra feishu \
     --extra matrix \
     --extra voice \
-    --extra wake \
     --extra edge-tts \
     --extra exa \
     --extra firecrawl \
@@ -28,12 +27,12 @@ RUN uv sync --frozen --no-install-project \
 ```
 
 #### 包含項目與原因：
-- **`--extra voice`**：包含 `faster-whisper`, `sounddevice`, `numpy` 等 C-extensions（已於 v2026.8.18 加入）。
-- **`--extra wake`**：包含 `openwakeword`, `onnxruntime`, `sherpa-onnx` 等 C++/ONNX 喚醒詞引擎，避免運行期在 Linux x86_64 上即時編譯/下載。
+- **`--extra voice`**：包含 `faster-whisper`, `sounddevice`, `numpy` 等 C-extensions。
 - **`--extra edge-tts`**：預設 TTS 語音生成引擎。
 - **`--extra dingtalk`, `--extra feishu`**：通訊平台擴充支援。
 - **`--extra exa`, `--extra firecrawl`**：官方搜尋 Provider SDK。
-- **`firecrawl-anydoc` (`tool.doc_extract`)**：文檔解析（PDF, Office 等，含 Rust native bindings），待官方釋出 extra 或直接在 Dockerfile 中 `uv pip install`。
+- **`firecrawl-anydoc`**：文檔解析（PDF, Office 等，含 Rust native bindings）。
+- *(註：`wake` 喚醒詞引擎因上游 `tflite-runtime` 尚不支援 Python 3.13 wheel，故維持由官方運行期 ONNX 方式載入)*
 
 ---
 
