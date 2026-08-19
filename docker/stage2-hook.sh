@@ -161,6 +161,7 @@ fi
 # denied` and the cont-init hook exits non-zero. Idempotent — `mkdir -p`
 # is a no-op if the dir already exists. (#18482, salvages #18488)
 mkdir -p "$HERMES_HOME"
+mkdir -p "$HERMES_HOME/.npm" "$HERMES_HOME/.cache" "$HERMES_HOME/.config"
 
 # Numeric UID/GID validation: must be digits only, non-root, 1-65534.
 # NAS hosts such as Unraid commonly use low non-root IDs (99:100).
