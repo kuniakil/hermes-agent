@@ -323,9 +323,8 @@ COPY --link --chmod=a+rX,go-w . .
 # ---------- Permissions ----------
 # Link hermes-agent itself (editable). Deps are already installed in the
 # cached layer above; `--no-deps` makes this a fast egg-link creation with no
-# resolution or downloads. Also pre-install firecrawl-anydoc for doc extraction.
-RUN uv pip install --no-cache-dir --no-deps -e "." && \
-    uv pip install --no-cache-dir "firecrawl-anydoc==0.1.6"
+# resolution or downloads.
+RUN uv pip install --no-cache-dir --no-deps -e "."
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, uv sync, npm install all run as root) and

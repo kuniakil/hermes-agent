@@ -31,8 +31,7 @@ RUN uv sync --frozen --no-install-project \
 - **`--extra edge-tts`**：預設 TTS 語音生成引擎。
 - **`--extra dingtalk`, `--extra feishu`**：通訊平台擴充支援。
 - **`--extra exa`, `--extra firecrawl`**：官方搜尋 Provider SDK。
-- **`firecrawl-anydoc`**：文檔解析（PDF, Office 等，含 Rust native bindings）。
-- *(註：`wake` 喚醒詞引擎因上游 `tflite-runtime` 尚不支援 Python 3.13 wheel，故維持由官方運行期 ONNX 方式載入)*
+- *(註：`wake` 喚醒詞引擎因上游 `tflite-runtime` 尚不支援 Python 3.13 wheel，`firecrawl-anydoc` 尚在 PyPI 14天隔離期，兩者維持由官方運行期方式處理)*
 
 ---
 
