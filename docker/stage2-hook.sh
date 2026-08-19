@@ -771,29 +771,4 @@ if [ -z "${AGENT_BROWSER_EXECUTABLE_PATH:-}" ] && \
     fi
 fi
 
-# --- PYTHONPATH for faster-whisper ---
-# Make faster-whisper venv site-packages available to Hermes Python.
-# This allows Hermes to find the module without rebuilding the Docker image.
-#
-# IMPORTANT: a bare `export` here only affects this stage2 shell process and
-# is immediately lost once stage2-hook.sh exits. It does NOT propagate to
-# s6-supervised services (main-hermes, dashboard) or SSH login shells.
-# We write into /run/s6/container_environment/ so that:
-#   - with-contenv (used by all supervised services) picks it up, and
-#   - the .bashrc / .profile loop added above reads it for SSH sessions.
-# This also overrides an empty PYTHONPATH="" that an orchestrator (e.g. k8s)
-# might have injected at the container level.
-if [ -d "/opt/data/venvs/faster-whisper/lib/python3.13/site-packages" ]; then
-    _fw_site="/opt/data/venvs/faster-whisper/lib/python3.13/site-packages"
-    mkdir -p /run/s6/container_environment
-    _existing_py=$(cat /run/s6/container_environment/PYTHONPATH 2>/dev/null || true)
-    if [ -n "$_existing_py" ]; then
-        printf '%s' "${_fw_site}:${_existing_py}" > /run/s6/container_environment/PYTHONPATH
-    else
-        printf '%s' "${_fw_site}" > /run/s6/container_environment/PYTHONPATH
-    fi
-    unset _fw_site _existing_py
-    echo "[stage2] Added faster-whisper to PYTHONPATH (s6 container_environment)"
-fi
-
 echo "[stage2] Setup complete; starting user services"
