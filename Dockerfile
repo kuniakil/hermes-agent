@@ -285,7 +285,22 @@ RUN cd plugins/platforms/photon/sidecar && \
 # The editable link is created after the source copy below.
 COPY pyproject.toml uv.lock ./
 RUN touch ./README.md
-RUN uv sync --frozen --no-install-project --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock --extra azure-identity --extra hindsight --extra matrix --extra voice
+RUN uv sync --frozen --no-install-project \
+    --extra all \
+    --extra messaging \
+    --extra dingtalk \
+    --extra feishu \
+    --extra matrix \
+    --extra voice \
+    --extra wake \
+    --extra edge-tts \
+    --extra exa \
+    --extra firecrawl \
+    --extra anthropic \
+    --extra bedrock \
+    --extra azure-identity \
+    --extra hindsight \
+    --extra otlp
 
 # ---------- Frontend build (cached independently from Python source) ----------
 # Copy only the frontend source trees first so that Python-only changes don't
@@ -309,8 +324,9 @@ COPY --link --chmod=a+rX,go-w . .
 # ---------- Permissions ----------
 # Link hermes-agent itself (editable). Deps are already installed in the
 # cached layer above; `--no-deps` makes this a fast egg-link creation with no
-# resolution or downloads.
-RUN uv pip install --no-cache-dir --no-deps -e "."
+# resolution or downloads. Also pre-install firecrawl-anydoc for doc extraction.
+RUN uv pip install --no-cache-dir --no-deps -e "." && \
+    uv pip install --no-cache-dir "firecrawl-anydoc==0.1.6"
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, uv sync, npm install all run as root) and
