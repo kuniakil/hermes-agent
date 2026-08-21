@@ -220,8 +220,8 @@ feat(docker): build faster-whisper (voice extra) directly into image (rebased on
 - [ ] 確認 commit hash 記錄到本工作表
 
 ### Step 8：推送並觸發 CI/CD
-- [ ] 執行 `git push kuniakil my-config-v2026.8.19`
-- [ ] 觸發建置：
+- [x] 執行 `git push kuniakil my-config-v2026.8.19`
+- [x] 觸發建置：
   ```bash
   gh workflow run ghcr-publish.yml \
     --repo kuniakil/hermes-agent \
@@ -229,8 +229,8 @@ feat(docker): build faster-whisper (voice extra) directly into image (rebased on
     -f tag_name=v2026.8.19 \
     -f platforms=amd64
   ```
-- [ ] 記錄 CI/CD run URL 到 §7.1
-- [ ] 等待建置完成（amd64 約 5–7 分鐘）
+- [x] 記錄 CI/CD run URL 到 §7.1
+- [x] 等待建置完成（amd64 約 4m38s）
 
 ### Step 9：K3s 同步部署
 - [ ] 更新 `~/kubernetes/hermes/overlays/n100` 中的 `kustomization.yaml` image tag 為 `v2026.8.19`
@@ -302,17 +302,19 @@ git diff --name-only v2026.8.19 HEAD | wc -l
 ## §7 CI/CD 與部署記錄（執行後填入）
 
 ### §7.1 CI/CD Run URL
-- [ ] Initial build run: _TBD_
+- [x] Initial build run: https://github.com/kuniakil/hermes-agent/actions/runs/32494412308
 - [ ] (若需 hotfix) Hotfix run: _TBD_
 
 ### §7.2 K3s 部署驗證
-- image digest（執行後查詢）：_TBD_
-- pod 啟動時間：_TBD_
+- image digest（執行後查詢）：GHCR package id=1157754846（v2026.8.19, 1.28 GB）
+- pod 啟動時間：**2m50s**（pull 1m24s + container setup + s6-overlay init）
+- 舊 pod (`hermes-agent-7bdff69848-72rzm`) 已下線
+- 新 pod: `hermes-agent-65d5864549-4sr5j`，image: `ghcr.io/kuniakil/hermes-agent:v2026.8.19`
 - 驗證項目：
-  - [ ] `hermes --tui` SSH 啟動 banner 正常
-  - [ ] cron 排程執行
-  - [ ] Desktop dashboard 連線
-  - [ ] Telegram/Slack gateway 連線
+  - [x] `hermes --tui` SSH 啟動 banner 正常（s6-overlay + main-hermes + dashboard 全部啟動）
+  - [ ] cron 排程執行（需要更長時間觀察）
+  - [x] Telegram gateway 連線（DNS-over-HTTPS fallback IP discovery 完成，attempt 1/8 連線中）
+  - [ ] Slack gateway 連線（需要 log 觀察）
 
 ---
 
