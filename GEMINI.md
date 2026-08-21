@@ -174,10 +174,9 @@ gh workflow run ghcr-publish.yml \
 | ghcr-publish workflow | GitHub Actions 自動建置並推送多平台 Docker image |
 | docker-compose.yml | 還原為自定義版本 |
 
----
-
 ## 🤖 AI 行為鐵律 (AI Behavior Rules)
 
+- **善用 Dify 知識庫檢索 (Query Dify Knowledge Base)**：當需要查詢 HomeLab 叢集配置、歷史故障排除、架構決策或 SOP 時，AI **應主動執行 `dify-search "<查詢關鍵字>"`**，直接從 Dify 的 `Wordpress-KB` 與 `llm-wiki` 知識庫中檢索最新的上下文與解決方案。
 - **優先徵求使用者同意 (Prioritize User Permission)**：在修改任何程式碼、設定檔（特別是 `Dockerfile`、`.env`、`config.yaml`）或連線資料庫之前，AI **必須**先在對話框中報告修改計畫，並獲得使用者明確同意後才可動手。
 - **動手前必先讀檔 (Look Before You Leap)**：禁止憑空猜測設定檔結構。在進行任何編輯前，AI **必須**先調用 `view_file` 工具閱讀目標檔案內容，理解當前結構後再做修改。
 - **衝突前先分析**：在開始 cherry-pick 前，必須先用 `git diff v<舊> v<新> -- Dockerfile` 預覽官方對關鍵檔案的修改，評估潛在衝突點。
