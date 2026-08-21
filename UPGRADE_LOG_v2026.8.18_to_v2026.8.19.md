@@ -101,9 +101,11 @@
 | — | `7447438434` | 重寫 `agent@agents-Mac-mini.local` 為 `skip-agent` | upstream `693c0e1c62` 直接刪除整個檔案 | ☐ |
 | — | `9752ea8794` | drop `--extra wake`（cp313 不相容） | upstream v2026.8.19 的 uv sync 已不含 `--extra wake` | ☐ |
 | — | `1764df1b90` | 移除 `firecrawl-anydoc==0.1.6` 安裝（PyPI 14天隔離） | upstream v2026.8.19 Dockerfile 不再安裝 `firecrawl-anydoc` | ☐ |
-| — | `3140e60b0e` | bake all extras（`--extra dingtalk/feishu/voice/wake/edge-tts/exa/firecrawl`） | upstream 回到短版 uv sync；`--extra all` policy（2026-05-12）刻意排除 voice/wake/firecrawl | ☐ |
+| — | `3140e60b0e` | bake all extras（`--extra dingtalk/feishu/voice/wake/edge-tts/exa/firecrawl`） | upstream 回到短版 uv sync；`--extra all` policy（2026-05-12）刻意排除 voice/wake/firecrawl | ☑ → hotfix `acfa77e921` 部分補回 |
 
 **替補動作**：v2026.8.19 的 uv sync 行末是 `--extra matrix`。`7829f8f2cf` 的 Dockerfile hunk 會自動乾淨地插入 `--extra voice`，**保留 fork 的「faster-whisper 燒進 image」功能**。
+
+**Hotfix 補充**：原 SOP 判定 `3140e60b0e` 為「丢棄」，但部署後發現 `edge_tts`、`firecrawl`、`playwright` Python 在 venv 中不存在。Root cause 是上游只是「revert 到短版 uv sync + 依赖 lazy-install」，並未重現我們 baked extras 的設計。為保留 fork 的「減少首次使用延遲 + 離線可用」特性，建立 hotfix commit `acfa77e921` 重加這些 extras 與 `uv pip install playwright`。
 
 ### §3.3 唯一需要重寫 message 的 commit
 
@@ -303,7 +305,7 @@ git diff --name-only v2026.8.19 HEAD | wc -l
 
 ### §7.1 CI/CD Run URL
 - [x] Initial build run: https://github.com/kuniakil/hermes-agent/actions/runs/32494412308
-- [ ] (若需 hotfix) Hotfix run: _TBD_
+- [x] (若需 hotfix) Hotfix run: https://github.com/kuniakil/hermes-agent/actions/runs/32496263908
 
 ### §7.2 K3s 部署驗證
 - image digest（執行後查詢）：GHCR package id=1157754846（v2026.8.19, 1.28 GB）
@@ -323,6 +325,7 @@ git diff --name-only v2026.8.19 HEAD | wc -l
 1. **順序敏感性**：Docker 自訂 commit 的套用順序很重要。先建立基礎（`f39e2cee2f` SSH + `3dfcd49fe9` env propagation），再刪除 dead code（`7829f8f2cf`）。顛倒順序會導致 cherry-pick 失敗。
 2. **Dead code 警覺**：當 cherry-pick 試圖「刪除」一個不存在的目標（上游已刪），git 可能會**靜默地把新增的部分加入**，留下 dead code。升級後必須 `grep` 驗證無殘留。
 3. **5 個 commit 同步淘汰**：`7447438434`、`9752ea8794`、`1764df1b90`、`3140e60b0e`（以及原計畫的 `7829f8f2cf`，但實測後保留）都因上游原生支援而淘汰或調整。這呼應了 AGENTS.md「功能重疊處理」原則。
+7. **Hotfix `acfa77e921` 補回 baked extras**：部署後發現 venv 缺少 `edge_tts`、`firecrawl`、`playwright` Python。上游設計是 lazy-install（v2026.8.19 回到短版 uv sync + 依赖 `tools/lazy_deps.py`），但 fork 期望 baked image。Hotfix commit 補回 `--extra dingtalk --extra feishu --extra edge-tts --extra exa --extra firecrawl` + `uv pip install playwright`，K3s rolling restart後驗證全部 importable。判定原則：保留上一版 baked extras 行為，除非上游以同樣方式 bake。
 4. **`7829f8f2cf` 的雙重角色**：原 SOP 草擬時歸類為「丟棄」，但實測發現它對 v2026.8.19 而言是**保留 fork 行為的關鍵 commit**（提供 `--extra voice`）。下次升級前先做 worktree 實測，比純 diff 比對可靠。
 5. **K3s `IfNotPresent` 仍需手動清 cache**：image tag 覆蓋後 kubelet 不會自動 pull。已記錄於先前升級日誌，本次沿用同樣 SOP。
 6. **部署參數變動**：本工作表已收斂 `.env` 僅含 image tag（無金鑰）、K3s overlay 為 `~/kubernetes/hermes/overlays/n100`、push 為 `kuniakil/hermes-agent`。這些是先前日誌（v2026.8.18）使用的值，本次升級沿用。
