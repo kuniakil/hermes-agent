@@ -285,7 +285,21 @@ RUN cd plugins/platforms/photon/sidecar && \
 # The editable link is created after the source copy below.
 COPY pyproject.toml uv.lock ./
 RUN touch ./README.md
-RUN uv sync --frozen --no-install-project --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock --extra azure-identity --extra hindsight --extra matrix --extra voice
+RUN uv sync --frozen --no-install-project \
+    --extra all \
+    --extra messaging \
+    --extra dingtalk \
+    --extra feishu \
+    --extra matrix \
+    --extra voice \
+    --extra edge-tts \
+    --extra exa \
+    --extra firecrawl \
+    --extra anthropic \
+    --extra bedrock \
+    --extra azure-identity \
+    --extra hindsight \
+    --extra otlp
 
 # ---------- Frontend build (cached independently from Python source) ----------
 # Copy only the frontend source trees first so that Python-only changes don't
@@ -316,6 +330,14 @@ RUN uv pip install --no-cache-dir --no-deps -e "." && \
     mkdir -p /root/.npm && \
     chown -R 10000:10000 /root/.npm && \
     chmod -R 0775 /root/.npm
+# Install playwright Python package so `hermes doctor` can exercise
+# the live Chromium via playwright.sync_api (see hermes_cli/doctor_live.py).
+# Upstream only bakes the Chromium binary via `npx playwright install`
+# (see `npx playwright install --with-deps chromium` above) but never
+# the Python SDK; without this install, doctor silently falls through
+# to "playwright not installed" and the browser tool's self-test is
+# permanently degraded.
+RUN uv pip install --no-cache-dir playwright
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, uv sync, npm install all run as root) and
