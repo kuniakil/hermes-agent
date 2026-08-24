@@ -172,6 +172,7 @@ gh workflow run ghcr-publish.yml \
 | Playwright Full Chromium 支援 | Dockerfile 安裝完整版 Playwright Chromium 並賦予權限 |
 | `.env` with HERMES_IMAGE | docker-compose 使用的 image tag 設定 |
 | ghcr-publish workflow | GitHub Actions 自動建置並推送多平台 Docker image |
+| 關閉 Upstream 自動排程 Workflows | 在 `install-e2e.yml` 與 `osv-scanner.yml` 等 workflow 加入 repo 判斷防護，避免 fork 自動執行 upstream 定時排程與 E2E 測試 |
 | docker-compose.yml | 還原為自定義版本 |
 
 ## 🤖 AI 行為鐵律 (AI Behavior Rules)
