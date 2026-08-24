@@ -83,6 +83,7 @@ jobs:
   # annotated with what each tag's own tree supports, and shared by every
   # OS's matrix so all combos cover the same set.
   pick-releases:
+    if: github.repository == 'NousResearch/hermes-agent' || github.event_name == 'workflow_dispatch'
     name: Pick release tags
     runs-on: ubuntu-latest
     timeout-minutes: 5
