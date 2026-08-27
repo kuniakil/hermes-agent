@@ -96,3 +96,14 @@
 - **GitHub Actions Run**: [https://github.com/kuniakil/hermes-agent/actions/runs/33083509249](https://github.com/kuniakil/hermes-agent/actions/runs/33083509249)
 - **Tag**: `v2026.8.27`
 - **Platform**: `amd64`
+- **Status**: ✅ Built & Published Successfully
+
+---
+
+## §6 部署與運行驗證（Deployment Verification）
+
+- **Image Tag**: `ghcr.io/kuniakil/hermes-agent:v2026.8.27`
+- **Verification Status**:
+  - [x] Docker Image 成功拉取至部署環境
+  - [x] Hermes Agent 容器啟動與自我檢查（doctor / runtime probe）正常無異常
+  - [x] v2026.8.27 官方與自訂功能全數就緒
