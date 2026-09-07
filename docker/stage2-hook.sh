@@ -103,6 +103,7 @@ export PATH="/opt/hermes/.venv/bin:$PATH"
 # inherit container PID 1's env) hits EACCES trying to write to the
 # read-only /opt/hermes/node_modules. See v2026.6.19 TUI EACCES fix.
 export HERMES_TUI_DIR=/opt/hermes/ui-tui
+export npm_config_cache=/tmp/.npm-cache
 # Load runtime env vars written by stage2-hook.sh into s6 container_environment
 # (e.g. AGENT_BROWSER_EXECUTABLE_PATH, PYTHONPATH for faster-whisper).
 # SSH login shells do not inherit /run/s6/container_environment/, so we
@@ -131,6 +132,7 @@ export PATH="/opt/hermes/.venv/bin:$PATH"
 # HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle.
 # See comment in .bashrc above.
 export HERMES_TUI_DIR=/opt/hermes/ui-tui
+export npm_config_cache=/tmp/.npm-cache
 # Load runtime env vars written by stage2-hook.sh into s6 container_environment.
 # See .bashrc above for rationale.
 if [ -d /run/s6/container_environment ]; then
@@ -472,6 +474,14 @@ as_hermes mkdir -p \
     "$HERMES_HOME/pairing" \
     "$HERMES_HOME/platforms/pairing" \
     "$HERMES_HOME/lazy-packages"
+
+# Ensure global /tmp/.npm-cache exists with sticky bit permissions for any user
+mkdir -p /tmp/.npm-cache && chmod 1777 /tmp/.npm-cache
+
+# Self-heal / clean legacy stale .npm from data volume
+if [ -d "$HERMES_HOME/.npm" ]; then
+    rm -rf "$HERMES_HOME/.npm" 2>/dev/null || true
+fi
 
 # --- Install-method stamp ---
 # The 'docker' stamp is baked into the immutable install tree at
