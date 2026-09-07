@@ -52,8 +52,20 @@
   - `Dockerfile`、`docker/stage2-hook.sh`、`docker/entrypoint-dispatch.sh`、`docker/entrypoint-ssh.sh`：官方無修改，所有自定義層 100% 乾淨套用。
   - `.github/workflows/`：守衛排程與 ghcr-publish 均正常運作。
 
-## 後續驗證項目
+## 驗證結果與系統檢查 (Verification)
 
-- [ ] GitHub Actions `ghcr-publish.yml` 多平台映像檔建置成功 (amd64)
-- [ ] Kubernetes 叢集映像檔更新並確認 Pod 正常啟動
-- [ ] 基本對話、工具呼叫、SSH 與語音/Playwright 功能驗證
+- [x] GitHub Actions `ghcr-publish.yml` 多平台映像檔建置成功 (amd64, Run ID: `34170095354`)
+- [x] Kubernetes 叢集映像檔更新並確認 Pod 正常啟動 (`v2026.9.7`)
+- [x] 系統檢查與套件相依驗證全數通過：
+  - **Hermes Agent**：✅ v0.21.1 (2026.9.7)
+  - **edge_tts**：✅
+  - **firecrawl**：✅
+  - **playwright**：✅
+  - **anthropic**：✅
+  - **faster_whisper**：✅
+  - **exa_py**：✅
+
+### 實機運行觀察 (Runtime Observations)
+- `npx playwright --version` 顯示為 `1.63.0`（由前版 `1.62.1` 升級），並觸發了套件自動安裝。
+- **原因分析**：因容器設定 `ENV HOME=/opt/data` 後，非 root 使用者尋找 npm cache 位置切換至 `/opt/data/.npm`，而未命中 `/root/.npm/_cacache`，導致 npx 自動重新下載。
+- **改善建議**：功能運作完全正常，建議在下次建置 Docker Image 時於 `Dockerfile` 或 PV 維護中一併整理 `/opt/data/.npm` 快取一致性。
