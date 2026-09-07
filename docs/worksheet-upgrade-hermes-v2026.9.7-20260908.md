@@ -68,6 +68,6 @@
 
 ### Phase 3: CI/CD 建置與叢集部署 (Deployment Phase)
 - [x] 3.1 透過 GitHub Actions 觸發 `ghcr-publish.yml` 建置 `amd64` Docker image (Run ID: `34170095354`)
-- [ ] 3.2 監控 GitHub Actions 建置狀態至完成 (約 5-7 分鐘)
-- [ ] 3.3 更新 Kubernetes 叢集 `hermes` 服務配置（若由 gitops/kustomize 管理或重啟 Pod）
-- [ ] 3.4 驗證容器啟動、SSH 連線、模型呼叫與基本工具功能
+- [x] 3.2 監控 GitHub Actions 建置狀態至完成 (約 5-7 分鐘)
+- [x] 3.3 更新 Kubernetes 叢集 `hermes` 服務配置（kustomization image tag 更新至 `v2026.9.7` 並 push 至 main）
+- [x] 3.4 驗證容器啟動、SSH 連線、模型呼叫與基本工具功能
