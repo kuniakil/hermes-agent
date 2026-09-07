@@ -46,9 +46,8 @@ RUN uv sync --frozen --no-install-project \
 rm -rf /opt/data/lazy-packages
 rm -rf /opt/data/.pkgs
 rm -rf /opt/data/agent-reach-venv
-rm -rf /opt/data/.npm
 ```
-- **`.npm` 快取一致性處理**：因 `ENV HOME=/opt/data`，`npx` 會在 `/opt/data/.npm` 建立快取。升級版本時若遇快取失效或版本升級（如 Playwright 1.62.1 → 1.63.0）會自動重載。建議定期清理或在 Dockerfile 構建階段預設全域 npm cache 位置。
+- **`.npm` 快取一致性處理 (已於 v2026.9.7 修正)**：已在 `Dockerfile` 全域安裝 `playwright` CLI 並設定 `ENV npm_config_cache=/tmp/.npm-cache`，同時在 `stage2-hook.sh` 開機時自動清理 `$HERMES_HOME/.npm`，徹底防止臨時 npm 下載污染持久卷 `/opt/data`。
 
 ---
 

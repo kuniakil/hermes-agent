@@ -60,6 +60,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Store Playwright browsers outside the volume mount so the build-time
 # install survives the /opt/data volume overlay at runtime.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
+# Centralize npm cache in /tmp to prevent polluting persistent volume /opt/data
+ENV npm_config_cache=/tmp/.npm-cache
 
 # Install system dependencies in one layer, clear APT cache.
 # tini was previously PID 1 to reap orphaned zombie processes (MCP stdio
@@ -217,8 +219,9 @@ COPY apps/shared/ apps/shared/
 ENV npm_config_install_links=false
 
 RUN npm install --prefer-offline --no-audit --fetch-retries=5 && \
+    npm install -g playwright && \
     for i in 1 2 3; do \
-        npx playwright install --with-deps chromium && break || \
+        playwright install --with-deps chromium && break || \
         { [ "$i" = 3 ] && exit 1; echo "playwright install failed (attempt $i); retrying in 10s"; sleep 10; }; \
     done && \
     chmod -R 0755 /opt/hermes/.playwright 2>/dev/null || true && \
@@ -324,12 +327,10 @@ COPY --link --chmod=a+rX,go-w . .
 # Link hermes-agent itself (editable). Deps are already installed in the
 # cached layer above; `--no-deps` makes this a fast egg-link creation with no
 # resolution or downloads.
-# Ensure /root/.npm exists and is accessible to UID 10000 (hermes user) to avoid
-# EACCES errors when tools invoke npm/npx at runtime.
+# Initialize /tmp/.npm-cache with sticky bit permissions so any user (root, hermes) can write.
 RUN uv pip install --no-cache-dir --no-deps -e "." && \
-    mkdir -p /root/.npm && \
-    chown -R 10000:10000 /root/.npm && \
-    chmod -R 0775 /root/.npm
+    mkdir -p /tmp/.npm-cache && \
+    chmod -R 1777 /tmp/.npm-cache
 # Install playwright Python package so `hermes doctor` can exercise
 # the live Chromium via playwright.sync_api (see hermes_cli/doctor_live.py).
 # Upstream only bakes the Chromium binary via `npx playwright install`
