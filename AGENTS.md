@@ -422,3 +422,10 @@ Long-form background lives in `website/docs/developer-guide/` (agent-loop, promp
 context-compression-and-caching, gateway-internals, tools-runtime, plugins/, cron-internals,
 session-storage, ...). Workflow rules (PR/issue/review/salvage process) live in the
 `hermes-agent-dev` skill, not here.
+
+## Local Resource Constraint (Mac Host Protection)
+
+- **Strict Resource Rule**: DO NOT run heavy test suites (`pytest`, full test matrix, `uv run pytest`), heavy typechecks, or local `docker build` directly on the local machine.
+- Local verification MUST only check git status, file diffs, and lightweight syntax.
+- All compilation, container packaging, and full test runs MUST be offloaded to GitHub Actions CI (`docker-release.yml` / `ghcr-publish.yml`).
+
