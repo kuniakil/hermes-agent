@@ -63,8 +63,8 @@
 - [x] 2.4 更新 `.env` 中 `HERMES_IMAGE` 標籤為 `v2026.9.7` 並 commit (`cd9ff61cc4`)
 - [x] 2.5 補齊歷史升級文件 (`UPGRADE_LOG_*.md`) 與 `GEMINI.md`
 - [x] 2.6 建立本次升級記錄檔 `UPGRADE_LOG_v2026.8.31_to_v2026.9.7.md` 並 commit
-- [ ] 2.7 輕量驗證（檢查 `git status`, `git diff`, `Dockerfile` 語法，不做重型本機 build/test）
-- [ ] 2.8 推送新分支至 GitHub: `git push kuniakil my-config-v2026.9.7`
+- [x] 2.7 輕量驗證（檢查 `git status`, `git diff`, `Dockerfile` 語法，不做重型本機 build/test）
+- [x] 2.8 推送新分支至 GitHub: `git push kuniakil my-config-v2026.9.7`
 
 ### Phase 3: CI/CD 建置與叢集部署 (Deployment Phase)
 - [ ] 3.1 透過 GitHub Actions 觸發 `ghcr-publish.yml` 建置 `amd64` Docker image
