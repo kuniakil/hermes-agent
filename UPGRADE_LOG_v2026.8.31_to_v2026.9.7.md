@@ -65,7 +65,18 @@
   - **faster_whisper**：✅
   - **exa_py**：✅
 
-### 實機運行觀察 (Runtime Observations)
-- `npx playwright --version` 顯示為 `1.63.0`（由前版 `1.62.1` 升級），並觸發了套件自動安裝。
-- **原因分析**：因容器設定 `ENV HOME=/opt/data` 後，非 root 使用者尋找 npm cache 位置切換至 `/opt/data/.npm`，而未命中 `/root/.npm/_cacache`，導致 npx 自動重新下載。
-- **改善建議**：功能運作完全正常，建議在下次建置 Docker Image 時於 `Dockerfile` 或 PV 維護中一併整理 `/opt/data/.npm` 快取一致性。
+### 實機運行觀察與快取熱修復 (Hotfix & Final Verification)
+
+- **現象**：升級後首次執行 `npx playwright --version` 顯示為 `1.63.0`，因 `ENV HOME=/opt/data` 且官方未在系統全域安裝 Playwright CLI，導致 npx 自動下載並快取在 `/opt/data/.npm/_npx/` 持久卷。
+- **熱修復 Commit**：`a56d8aab0c` (`fix(docker): bake playwright CLI globally and isolate npm cache to /tmp`)
+  - **建置記錄**：GitHub Actions [Run #34171387111](https://github.com/kuniakil/hermes-agent/actions/runs/34171387111)
+  - **三層防護策略**：
+    1. **清除現有殘留**：透過 `kubectl exec` 清理 `/opt/data/.npm`。
+    2. **全域 Bake 二進位檔**：`Dockerfile` 加入 `npm install -g playwright`，直接烘焙全域 CLI，不依賴 runtime lazy install。
+    3. **隔離 npm cache**：設定 `ENV npm_config_cache=/tmp/.npm-cache`（非持久）+ sticky-bit 權限；`stage2-hook.sh` 開機時自動檢查並自我修復清理 `$HERMES_HOME/.npm`。
+- **最終驗證結果 (✅ 全數通過)**：
+  - `npx playwright --version`：✅ `1.63.0`（本機直接調用，不再觸發下載）
+  - `which playwright`：✅ `/opt/hermes/.venv/bin/playwright`
+  - `/usr/local/bin/playwright`：✅ 存在（全域安裝）
+  - `/opt/data/.npm`：✅ 已清除乾淨且不再生成
+  - `/tmp/.npm-cache`：✅ 存在且具備 sticky-bit 權限

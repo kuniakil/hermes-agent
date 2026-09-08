@@ -170,6 +170,7 @@ gh workflow run ghcr-publish.yml \
 | SSH + 建置工具鏈整合 | Dockerfile 加入 `openssh-server`、`ssh-keygen`、`NODE_OPTIONS`；`stage2-hook.sh` 整合 SSH 啟動 + `HERMES_TUI_DIR` export + `faster-whisper` PYTHONPATH；簡化版 `entrypoint-ssh.sh` 委派給官方 `entrypoint-dispatch.sh` |
 | UTF-8 / Locales & rsync 支援 | Dockerfile 加入 `rsync` 與完整的 `zh_TW.UTF-8` / `en_US.UTF-8` locale 設定 |
 | Playwright Full Chromium 支援 | Dockerfile 安裝完整版 Playwright Chromium 並賦予權限 |
+| Playwright CLI 全域烘焙與 npm 快取隔離 | Dockerfile 加入 `npm install -g playwright` 與 `ENV npm_config_cache=/tmp/.npm-cache`；`stage2-hook.sh` 開機自動清理 `$HERMES_HOME/.npm` 並初始化 sticky-bit `/tmp/.npm-cache` |
 | `.env` with HERMES_IMAGE | docker-compose 使用的 image tag 設定 |
 | ghcr-publish workflow | GitHub Actions 自動建置並推送多平台 Docker image |
 | 關閉 Upstream 自動排程 Workflows | 在 `install-e2e.yml` 與 `osv-scanner.yml` 等 workflow 加入 repo 判斷防護，避免 fork 自動執行 upstream 定時排程與 E2E 測試 |
