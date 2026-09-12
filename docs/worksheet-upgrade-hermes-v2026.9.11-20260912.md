@@ -89,7 +89,7 @@
 - [x] 2.8 推送新分支至 GitHub: `git push kuniakil my-config-v2026.9.11`
 
 ### Phase 3: CI/CD 建置與叢集部署 (Deployment Phase)
-- [x] 3.1 透過 GitHub Actions 觸發 `ghcr-publish.yml` 同時建置 `amd64` 與 `arm64` Docker image ([Run ID: 34662814477](https://github.com/kuniakil/hermes-agent/actions/runs/34662814477))
-- [ ] 3.2 監控 GitHub Actions 建置狀態至完成 (雙架構平行原生建置，約 5-7 分鐘)
-- [ ] 3.3 更新 Kubernetes 叢集 `hermes` 服務配置（kustomization image tag 更新至 `v2026.9.11` 並 push 至 main）
-- [ ] 3.4 驗證容器啟動、SSH 連線、模型呼叫與基本工具功能
+- [x] 3.1 透過 GitHub Actions 觸發 `ghcr-publish.yml` 同時建置 `amd64` 與 `arm64` Docker image ([Run ID: 34662814477](https://github.com/kuniakil/hermes-agent/actions/runs/34662814477) / [Run ID: 34667585330](https://github.com/kuniakil/hermes-agent/actions/runs/34667585330))
+- [x] 3.2 監控 GitHub Actions 建置狀態至完成 (雙架構平行原生建置成功，產出 multi-arch manifest)
+- [x] 3.3 Kubernetes 叢集映像檔部署更新至 `v2026.9.11`
+- [x] 3.4 驗證容器啟動、模型呼叫與基本工具功能（`hermes doctor` 顯示 `All checks passed! 🎉`，已自動修復 npm 依賴並注入 GITHUB_TOKEN）
