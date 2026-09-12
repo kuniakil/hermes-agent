@@ -161,9 +161,9 @@ gh workflow run ghcr-publish.yml \
 
 ---
 
-## 4. 我們的自定義 Commits 清單（相對 v2026.9.7）
+## 4. 我們的自定義 Commits 清單（相對 v2026.9.11）
 
-以下為套用在官方 `v2026.9.7` Tag 上的所有自定義 commits：
+以下為套用在官方 `v2026.9.11` Tag 上的所有自定義 commits：
 
 | 功能 | 描述 |
 |------|------|
@@ -171,9 +171,9 @@ gh workflow run ghcr-publish.yml \
 | UTF-8 / Locales & rsync 支援 | Dockerfile 加入 `rsync` 與完整的 `zh_TW.UTF-8` / `en_US.UTF-8` locale 設定 |
 | Playwright Full Chromium 支援 | Dockerfile 安裝完整版 Playwright Chromium 並賦予權限 |
 | Playwright CLI 全域烘焙與 npm 快取隔離 | Dockerfile 加入 `npm install -g playwright` 與 `ENV npm_config_cache=/tmp/.npm-cache`；`stage2-hook.sh` 開機自動清理 `$HERMES_HOME/.npm` 並初始化 sticky-bit `/tmp/.npm-cache` |
-| `.env` with HERMES_IMAGE | docker-compose 使用的 image tag 設定 |
-| ghcr-publish workflow | GitHub Actions 自動建置並推送多平台 Docker image |
-| 關閉 Upstream 自動排程 Workflows | 在 `install-e2e.yml` 與 `osv-scanner.yml` 等 workflow 加入 repo 判斷防護，避免 fork 自動執行 upstream 定時排程與 E2E 測試 |
+| `.env` with HERMES_IMAGE | docker-compose 使用的 image tag 設定（指向 `v2026.9.11`） |
+| ghcr-publish workflow | GitHub Actions 自動建置並推送多平台 Docker image（採用原生 `ubuntu-24.04-arm` 與 `ubuntu-latest` 執行器） |
+| 清理非必要 Upstream Workflows | 遵循 Workflow Purge Protection 原則，僅保留 `ghcr-publish.yml`，清除其餘官方排程與 E2E workflows |
 | docker-compose.yml | 還原為自定義版本 |
 
 ## 🤖 AI 行為鐵律 (AI Behavior Rules)
