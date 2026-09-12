@@ -220,6 +220,7 @@ ENV npm_config_install_links=false
 
 RUN npm install --prefer-offline --no-audit --fetch-retries=5 && \
     npm install -g playwright && \
+    npm audit fix --workspaces=false 2>/dev/null || true && \
     for i in 1 2 3; do \
         playwright install --with-deps chromium && break || \
         { [ "$i" = 3 ] && exit 1; echo "playwright install failed (attempt $i); retrying in 10s"; sleep 10; }; \
