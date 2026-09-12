@@ -339,7 +339,9 @@ RUN uv pip install --no-cache-dir --no-deps -e "." && \
 # the Python SDK; without this install, doctor silently falls through
 # to "playwright not installed" and the browser tool's self-test is
 # permanently degraded.
-RUN uv pip install --no-cache-dir playwright
+RUN uv pip install --no-cache-dir playwright && \
+    npm audit fix --workspaces=false 2>/dev/null || true && \
+    npm cache clean --force
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, uv sync, npm install all run as root) and
