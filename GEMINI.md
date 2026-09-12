@@ -103,12 +103,12 @@ git push kuniakil my-config-v<新版本>
 ### 第八步：觸發 GitHub CI/CD
 
 ```bash
-# 預設建置 amd64 (快速 5-7 分鐘)
+# 預設同時建置 amd64 與 arm64 (採用原生 ubuntu-24.04-arm 執行器，約 5-7 分鐘)
 gh workflow run ghcr-publish.yml \
   --repo kuniakil/hermes-agent \
   --ref my-config-v<新版本> \
   -f tag_name=v<新版本> \
-  -f platforms=amd64
+  -f platforms=all
 ```
 
 ---
