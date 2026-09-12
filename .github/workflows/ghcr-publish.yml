@@ -10,11 +10,11 @@ on:
       platforms:
         description: 'Target platform(s)'
         required: false
-        default: 'amd64'
+        default: 'all'
         type: choice
         options:
-          - 'amd64'
           - 'all'
+          - 'amd64'
           - 'arm64'
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
       - name: Set platform matrix
         id: set-matrix
         run: |
-          CHOICE="${{ github.event.inputs.platforms || 'amd64' }}"
+          CHOICE="${{ github.event.inputs.platforms || 'all' }}"
           if [ "$CHOICE" = "all" ]; then
             echo 'matrix=[{"platform": "linux/amd64", "runner": "ubuntu-latest"}, {"platform": "linux/arm64", "runner": "ubuntu-24.04-arm"}]' >> $GITHUB_OUTPUT
           elif [ "$CHOICE" = "arm64" ]; then
