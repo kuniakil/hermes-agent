@@ -38,43 +38,43 @@
 ## 升級執行檢查清單 (Worksheet Checklist)
 
 ### Phase 1: 準備與分支建立 (Pre-Execution & Branch Setup)
-- [ ] 取得使用者確認 Go-Sign
-- [ ] 建立備份分支：`git branch backup/my-config-v2026.9.11`
-- [ ] 從官方 release tag 建立新分支：`git checkout -b my-config-v2026.9.14 v2026.9.14`
+- [x] 取得使用者確認 Go-Sign
+- [x] 建立備份分支：`git branch backup/my-config-v2026.9.11`
+- [x] 從官方 release tag 建立新分支：`git checkout -b my-config-v2026.9.14 v2026.9.14`
 
 ### Phase 2: 自定義 Commits Cherry-Pick 與衝突解決 (Cherry-Pick & Patching)
-- [ ] 套用基礎配置：
-  - [ ] `022818679e`: chore: add .env with HERMES_IMAGE for docker-compose
-  - [ ] `12afb76b1a`: chore: add ghcr-publish workflow for Docker image build
-  - [ ] `22e92eea77`: chore: restore docker-compose.yml from my-config-v2026.5.16
-- [ ] 套用 Docker 核心與工具鏈自定義：
-  - [ ] `de6f13a8ab`: feat: integrate SSH and build toolchain into v2026.8.3 Docker architecture
-  - [ ] `bb03e822c0`: feat(docker): add rsync, locales, and full UTF-8 support
-  - [ ] `47451a4381`: feat(docker): install full Playwright Chromium with proper permissions
-  - [ ] `cab338141e`: ci: add platform choice to workflow defaulting to amd64
-  - [ ] `a3fd97e655`: fix(docker): propagate s6 container_environment to SSH sessions and fix faster-whisper PYTHONPATH
-  - [ ] `db5c0dab0f`: feat(docker): build faster-whisper (voice extra) directly into image
-  - [ ] `cdc0e024cb`: fix(docker): ensure /root/.npm ownership is granted to hermes user (UID 10000)
-  - [ ] `a96b9ae818`: fix(docker): set ENV HOME=/opt/data to prevent non-root processes from accessing /root
-  - [ ] `edcf01f35a`: feat(docker): restore dropped extras and install playwright (合併官方 `--extra google-chat`)
-  - [ ] `55a4763bda`: chore: add Mac host resource constraint rule to AGENTS.md
-  - [ ] `cce7ba5796`: fix(docker): bake playwright CLI globally and isolate npm cache to /tmp
-  - [ ] `6f00fd3b95`: fix(docker): persist fixed package-lock.json and enforce post-copy npm audit fix
-- [ ] 執行 Workflow Purge Protection：
-  - [ ] `0544fff0c9` / 清除非必要 upstream workflows，僅保留 `ghcr-publish.yml`
-  - [ ] `cb0413feeb`: ci: default platforms to all for dual-arch build (amd64 + arm64) using native runners
-- [ ] 更新版號與文件：
-  - [ ] 更新 `.env`：`HERMES_IMAGE=ghcr.io/kuniakil/hermes-agent:v2026.9.14`
-  - [ ] 補回歷史升級文件 (`UPGRADE_LOG_*.md`, `GEMINI.md`)
-  - [ ] 建立 `UPGRADE_LOG_v2026.9.11_to_v2026.9.14.md`
+- [x] 套用基礎配置：
+  - [x] `39c3651dc2`: chore: add .env with HERMES_IMAGE for docker-compose
+  - [x] `4940969734`: chore: add ghcr-publish workflow for Docker image build
+  - [x] `4bae54c108`: chore: restore docker-compose.yml from my-config-v2026.5.16
+- [x] 套用 Docker 核心與工具鏈自定義：
+  - [x] `da38f364d1`: feat: integrate SSH and build toolchain into v2026.8.3 Docker architecture
+  - [x] `761315d38b`: feat(docker): add rsync, locales, and full UTF-8 support
+  - [x] `b1e33beb17`: feat(docker): install full Playwright Chromium with proper permissions
+  - [x] `004cc86bca`: ci: add platform choice to workflow defaulting to amd64
+  - [x] `0a47022938`: fix(docker): propagate s6 container_environment to SSH sessions and fix faster-whisper PYTHONPATH
+  - [x] `ef16ec3a4b`: feat(docker): build faster-whisper (voice extra) directly into image
+  - [x] `633fced96f`: fix(docker): ensure /root/.npm ownership is granted to hermes user (UID 10000)
+  - [x] `c55294c28a`: fix(docker): set ENV HOME=/opt/data to prevent non-root processes from accessing /root
+  - [x] `cfd886859c`: feat(docker): restore dropped extras and install playwright (合併官方 `--extra google-chat`)
+  - [x] `759c14bd8b`: chore: add Mac host resource constraint rule to AGENTS.md
+  - [x] `efeb5dcd78`: fix(docker): bake playwright CLI globally and isolate npm cache to /tmp
+  - [x] `a383c3d304`: fix(docker): persist fixed package-lock.json and enforce post-copy npm audit fix
+- [x] 執行 Workflow Purge Protection：
+  - [x] `eab8c46301`: chore(ci): upgrade to native arm64 runner (ubuntu-24.04-arm) and purge non-essential workflows
+  - [x] `2337247513`: ci: default platforms to all for dual-arch build (amd64 + arm64) using native runners
+- [x] 更新版號與文件：
+  - [x] `3a67bb1b7b`: chore: bump HERMES_IMAGE tag to v2026.9.14
+  - [x] `0b28e683b8`: 補回歷史升級文件 (`UPGRADE_LOG_*.md`)
+  - [x] `e9971dfcb7`: 建立 `UPGRADE_LOG_v2026.9.11_to_v2026.9.14.md` 與工作表
 
 ### Phase 3: 本地輕量驗證與推送 (Local Verification & Push)
-- [ ] 驗證工作區狀態乾淨 (`git status`)
-- [ ] 檢查 Dockerfile 語法與自定義層整合完整性
-- [ ] 推送新分支到遠端：`git push kuniakil my-config-v2026.9.14`
+- [x] 驗證工作區狀態乾淨 (`git status`)
+- [x] 檢查 Dockerfile 語法與自定義層整合完整性
+- [x] 推送新分支到遠端：`git push kuniakil my-config-v2026.9.14`
 
 ### Phase 4: GitHub Actions 映像檔建置 (CI/CD Build)
-- [ ] 觸發 GitHub Actions `ghcr-publish.yml`：
+- [x] 觸發 GitHub Actions `ghcr-publish.yml`（Run ID: `34913550568`）：
   ```bash
   gh workflow run ghcr-publish.yml \
     --repo kuniakil/hermes-agent \
@@ -82,7 +82,7 @@
     -f tag_name=v2026.9.14 \
     -f platforms=all
   ```
-- [ ] 追蹤建置狀態並記錄 Run ID（預計 ~5-7 分鐘完成雙架構建置）
+- [ ] 追蹤建置狀態並記錄結果（雙架構原生 runner：amd64 + arm64）
 
 ### Phase 5: Kubernetes 叢集部署與驗證 (K8s Deployment & Verification)
 - [ ] 更新 Kubernetes `hermes` deployment 映像檔 tag 為 `v2026.9.14`
