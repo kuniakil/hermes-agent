@@ -71,12 +71,12 @@
   - [x] 建立 `UPGRADE_LOG_v2026.9.14_to_v2026.9.21.md` 與工作表更新
 
 ### Phase 3: 本地輕量驗證與推送 (Local Verification & Push)
-- [ ] 驗證工作區狀態乾淨 (`git status`)
-- [ ] 檢查 Dockerfile 語法與自定義層整合完整性
-- [ ] 推送新分支到遠端：`git push kuniakil my-config-v2026.9.21`
+- [x] 驗證工作區狀態乾淨 (`git status`)
+- [x] 檢查 Dockerfile 語法與自定義層整合完整性
+- [x] 推送新分支到遠端：`git push kuniakil my-config-v2026.9.21`
 
 ### Phase 4: GitHub Actions 映像檔建置 (CI/CD Build)
-- [ ] 觸發 GitHub Actions `ghcr-publish.yml`：
+- [x] 觸發 GitHub Actions `ghcr-publish.yml`（Run ID: `35846077567`）：
   ```bash
   gh workflow run ghcr-publish.yml \
     --repo kuniakil/hermes-agent \
