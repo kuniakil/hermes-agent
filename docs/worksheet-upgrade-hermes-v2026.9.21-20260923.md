@@ -87,8 +87,9 @@
 - [ ] 追蹤建置狀態並記錄結果（雙架構原生 runner：amd64 + arm64）
 
 ### Phase 5: Kubernetes 叢集部署與驗證 (K8s Deployment & Verification)
-- [ ] 更新 Kubernetes `hermes` deployment 映像檔 tag 為 `v2026.9.21`
-- [ ] 觀察 Pod rolling update 狀態
-- [ ] 進入 Pod 執行 `hermes doctor` 驗證全數通過
-- [ ] 驗證 SSH 登入、Playwright Chromium、API 連線及 state.db 運作
-- [ ] 標記工作表全部完成並歸檔升級記錄
+- [x] 更新 Kubernetes `hermes` deployment 映像檔 tag 為 `v2026.9.21`
+- [x] 觀察 Pod rolling update 狀態
+- [x] 進入 Pod 執行 `hermes doctor` 驗證全數通過
+- [x] 驗證 SSH 登入、Playwright Chromium、API 連線及 state.db 運作
+- [x] 更新集中式憑證庫 `~/kubernetes/.secrets.env` 並同步全叢集修復 GitHub token 過期問題
+- [x] 標記工作表全部完成並歸檔升級記錄
