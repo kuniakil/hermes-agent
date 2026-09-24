@@ -73,6 +73,81 @@ EOF
     exit 1
 fi
 
+# --- SSH server setup (custom) ---
+# Setup SSH for remote access. Runs early because sshd needs the hermes
+# user to exist first (before the UID/GID remap block below). The Docker
+# image bakes openssh-server (see Dockerfile apt layer) and pre-creates
+# /var/run/sshd + ssh host keys.
+if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
+    echo "[stage2] Setting up SSH server"
+    mkdir -p /run/sshd
+    mkdir -p "$HERMES_HOME/.ssh"
+
+    # Write authorized_keys from SSH_PUBLIC_KEY env var (strip stray quotes)
+    SSH_KEY_CLEAN=$(echo "$SSH_PUBLIC_KEY" | sed 's/^"//;s/"$//')
+    echo "$SSH_KEY_CLEAN" > "$HERMES_HOME/.ssh/authorized_keys"
+    chmod 600 "$HERMES_HOME/.ssh/authorized_keys"
+    chown -R hermes:hermes "$HERMES_HOME/.ssh"
+
+    # .bashrc — auto-source /opt/data/.env on interactive login
+    cat > "$HERMES_HOME/.bashrc" <<'EOF'
+# Auto-source environment variables for SSH login
+if [ -f /opt/data/.env ]; then
+    set -a
+    . /opt/data/.env
+    set +a
+    unset SSH_PUBLIC_KEY
+fi
+export PATH="/opt/hermes/.venv/bin:$PATH"
+# HERMES_TUI_DIR points the TUI launcher at the prebuilt ui-tui bundle,
+# which sidesteps the runtime `npm install` in _tui_need_npm_install().
+# Without this, an SSH login shell (a fresh process tree that does NOT
+# inherit container PID 1's env) hits EACCES trying to write to the
+# read-only /opt/hermes/node_modules.
+export HERMES_TUI_DIR=/opt/hermes/ui-tui
+export npm_config_cache=/tmp/.npm-cache
+# Load runtime env vars written by stage2-hook.sh into s6 container_environment
+# (e.g. AGENT_BROWSER_EXECUTABLE_PATH, PYTHONPATH for faster-whisper).
+if [ -d /run/s6/container_environment ]; then
+    for _env_f in /run/s6/container_environment/*; do
+        [ -f "$_env_f" ] || continue
+        _env_key=$(basename "$_env_f")
+        _env_val=$(cat "$_env_f")
+        export "${_env_key}=${_env_val}"
+    done
+    unset _env_f _env_key _env_val
+fi
+EOF
+    chown hermes:hermes "$HERMES_HOME/.bashrc"
+
+    # .profile — same auto-source for sh login shells
+    cat > "$HERMES_HOME/.profile" <<'EOF'
+if [ -f /opt/data/.env ]; then
+    set -a
+    . /opt/data/.env
+    set +a
+    unset SSH_PUBLIC_KEY
+fi
+export PATH="/opt/hermes/.venv/bin:$PATH"
+export HERMES_TUI_DIR=/opt/hermes/ui-tui
+export npm_config_cache=/tmp/.npm-cache
+if [ -d /run/s6/container_environment ]; then
+    for _env_f in /run/s6/container_environment/*; do
+        [ -f "$_env_f" ] || continue
+        _env_key=$(basename "$_env_f")
+        _env_val=$(cat "$_env_f")
+        export "${_env_key}=${_env_val}"
+    done
+    unset _env_f _env_key _env_val
+fi
+EOF
+    chown hermes:hermes "$HERMES_HOME/.profile"
+
+    # Start sshd in background
+    /usr/sbin/sshd
+    echo "[stage2] SSH server started"
+fi
+
 # --- Bootstrap HERMES_HOME as root ---
 # Create the directory (and any missing parents) while we still have root
 # privileges so the chown checks below see real metadata and the later
@@ -418,6 +493,15 @@ if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
             chmod 0700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
         fi
     fi
+fi
+
+# Ensure global /tmp/.npm-cache exists with sticky bit permissions for any user
+mkdir -p /tmp/.npm-cache && chmod 1777 /tmp/.npm-cache
+
+# Self-heal / clean legacy stale .npm from data volume (defensive; Dockerfile
+# already chowns /root/.npm, but a host bind-mount may have injected a stale copy)
+if [ -d "$HERMES_HOME/.npm" ]; then
+    rm -rf "$HERMES_HOME/.npm" 2>/dev/null || true
 fi
 
 # --- Install-method stamp ---
