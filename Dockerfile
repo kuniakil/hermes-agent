@@ -70,7 +70,20 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
 # hermes process, the dashboard, and per-profile gateways.
 RUN apt-get -o Acquire::Retries=3 update && \
     apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-    ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 procps git openssh-client docker-cli xz-utils && \
+    ca-certificates curl iputils-ping python3 python-is-python3 ripgrep ffmpeg gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 procps git openssh-client openssh-server docker-cli xz-utils rsync locales && \
+    mkdir -p /var/run/sshd && ssh-keygen -A && \
+    echo "C.UTF-8 UTF-8" > /etc/locale.gen && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
+    echo "zh_TW.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen && \
+    echo "LANG=C.UTF-8" > /etc/default/locale && \
+    echo "LC_ALL=C.UTF-8" >> /etc/default/locale && \
+    echo "export LANG=C.UTF-8" >> /etc/profile && \
+    echo "export LC_ALL=C.UTF-8" >> /etc/profile && \
+    echo "export LANG=C.UTF-8" >> /home/node/.bashrc 2>/dev/null || true && \
+    echo "export LC_ALL=C.UTF-8" >> /home/node/.bashrc 2>/dev/null || true && \
+    echo "export LANG=C.UTF-8" >> /root/.bashrc && \
+    echo "export LC_ALL=C.UTF-8" >> /root/.bashrc && \
     rm -rf /var/lib/apt/lists/*
 
 # Bot Screen (opt-in): PACKAGES["apt"] from tools/bot_desktop/runtime.py plus apt
@@ -216,10 +229,12 @@ ENV npm_config_install_links=false
 
 # chrome-headless-shell: what the browser tool has always driven headlessly.
 # Smaller, no window code paths. --with-deps pulls the shared system libraries.
+# We install the FULL chromium (not --only-shell) so SSH / agent-browser paths
+# always have a headed Chromium available regardless of HERMES_BOT_DESKTOP.
 RUN npm install --prefer-offline --no-audit --fetch-retries=5 && \
     for i in 1 2 3; do \
-        npx playwright install --with-deps chromium --only-shell && break || \
-        { [ "$i" = 3 ] && exit 1; echo "playwright headless-shell install failed (attempt $i); retrying in 10s"; sleep 10; }; \
+        npx playwright install --with-deps chromium && break || \
+        { [ "$i" = 3 ] && exit 1; echo "playwright install failed (attempt $i); retrying in 10s"; sleep 10; }; \
     done && \
     npm cache clean --force
 
@@ -297,7 +312,10 @@ RUN cd plugins/platforms/photon/sidecar && \
 # The editable link is created after the source copy below.
 COPY pyproject.toml uv.lock ./
 RUN touch ./README.md
-RUN uv sync --frozen --no-install-project --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock --extra azure-identity --extra matrix --extra google-chat
+RUN uv sync --frozen --no-install-project \
+    --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock --extra azure-identity \
+    --extra matrix --extra google-chat \
+    --extra edge-tts --extra firecrawl --extra dingtalk --extra feishu --extra exa
 
 # ---------- Frontend build (cached independently from Python source) ----------
 # Copy only the frontend source trees first so that Python-only changes don't
@@ -317,6 +335,11 @@ RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 # Shipping it root-owned means stage2 finds a directory it trusts and chowns it.
 RUN mkdir -p /tmp/hermes-runtime && chmod 0700 /tmp/hermes-runtime
 
+# Isolate npm global cache to /tmp (hermes user with remapped HERMES_UID
+# otherwise hits EACCES on /root/.npm; /opt/hermes is also read-only at runtime).
+# Stage2 re-applies this with sticky-bit on every boot as a defensive backup.
+RUN mkdir -p /tmp/.npm-cache && chmod 1777 /tmp/.npm-cache
+
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
 # --link decouples this layer from parents for cache purposes; --chmod bakes
@@ -332,6 +355,10 @@ COPY --link --chmod=a+rX,go-w . .
 # cached layer above; `--no-deps` makes this a fast egg-link creation with no
 # resolution or downloads.
 RUN uv pip install --no-cache-dir --no-deps -e "."
+
+# Grant hermes user (UID 10000) ownership of /root/.npm so it can write
+# its package cache after s6 drops privileges. Stage2 self-heals this too.
+RUN mkdir -p /root/.npm /root/.cache && chown -R 10000:10000 /root/.npm /root/.cache
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, uv sync, npm install all run as root) and
@@ -428,6 +455,9 @@ ENV HERMES_TUI_DIR=/opt/hermes/ui-tui
 ENV HERMES_HOME=/opt/data
 ENV HERMES_WRITE_SAFE_ROOT=/opt/data
 ENV HERMES_DISABLE_LAZY_INSTALLS=1
+# Pin HOME to the data volume so non-root processes (npm, pip, sshd) don't
+# touch /root (which holds keys / caches we don't want hermes UID to see).
+ENV HOME=/opt/data
 # The published image seals /opt/hermes (root-owned, read-only) so a runtime
 # lazy install can't mutate the agent's own venv and brick it. But opt-in
 # backends (Firecrawl web search, Exa, Feishu, …) keep their SDKs in
@@ -461,6 +491,10 @@ ENV XDG_RUNTIME_DIR=/tmp/hermes-runtime
 # the opt-out env var (HERMES_DOCKER_EXEC_AS_ROOT=1).
 COPY --chmod=0755 docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
 COPY --chmod=0755 docker/entrypoint-dispatch.sh /opt/hermes/docker/entrypoint-dispatch.sh
+
+# Backward-compatible SSH entrypoint shim for Zeabur / custom deployments that
+# hard-code the legacy entrypoint path. Calls into entrypoint-dispatch.sh.
+COPY --chmod=0755 docker/entrypoint-ssh.sh /opt/hermes/docker/entrypoint-ssh.sh
 
 # Pre-s6 entrypoint.sh did `source .venv/bin/activate` which exported
 # the venv bin onto PATH; Architecture B's main-wrapper.sh does the
