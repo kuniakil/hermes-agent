@@ -191,7 +191,7 @@
 - [ ] `git push kuniakil my-config-v2026.9.24`(先推分支,不推 tag)
 
 ### Phase 13: GitHub Actions 映像檔建置 (CI/CD Build)
-- [ ] 觸發 `ghcr-publish.yml` workflow:
+- [x] 觸發 `ghcr-publish.yml` workflow:
   ```bash
   gh workflow run ghcr-publish.yml \
     --repo kuniakil/hermes-agent \
@@ -199,9 +199,14 @@
     -f tag_name=v2026.9.24 \
     -f platforms=all
   ```
-- [ ] 記錄 GitHub Actions Run ID 到本 worksheet
-- [ ] 追蹤雙架構(amd64 + arm64)native runner 建置狀態
-- [ ] 驗證建置結果:`ghcr.io/kuniakil/hermes-agent:v2026.9.24` 存在
+- [x] **GitHub Actions Run ID: `36028566941`**(2026-09-24 16:45 UTC, ~14 分鐘)
+  - prepare ✓ (3s)
+  - build-and-push linux/arm64 (ubuntu-24.04-arm) ✓ (5m45s)
+  - build-and-push linux/amd64 (ubuntu-latest) ✓ (7m49s)
+  - merge (multi-arch manifest list) ✓ (17s)
+- [x] **映像已推送**:`ghcr.io/kuniakil/hermes-agent:v2026.9.24`
+  - Digest: `sha256:c218d5808ac030099bbbaf38815846cf768bd945b78c7d3e134b988ac153c029`
+  - Content-Type: `application/vnd.oci.image.index.v1+json`(multi-arch)
 
 ### Phase 14: Kubernetes 叢集部署與驗證 (K8s Deployment & Verification)
 - [ ] 更新 Kubernetes `hermes` deployment 映像檔 tag 為 `v2026.9.24`
