@@ -103,7 +103,9 @@
 ### Phase 6:推送與 CI(需再次確認)
 - [x] `git push kuniakil my-config-v0.21.6`(remote:`kuniakil` = 個人 fork,`origin` = 官方)
 - [x] 觸發 `ghcr-publish.yml`(amd64 + arm64 原生 runner, tag_name=`v0.21.6`, platforms=`all`)
-- [x] 記錄 GH Actions Run ID: [`38014333109`](https://github.com/kuniakil/hermes-agent/actions/runs/38014333109)
+- [x] 記錄 GH Actions Run ID:
+  - Run 1 (初版): [`38014333109`](https://github.com/kuniakil/hermes-agent/actions/runs/38014333109)
+  - Run 2 (含 agent-browser 內建 + install-stamp 版本號修復): [`38015968814`](https://github.com/kuniakil/hermes-agent/actions/runs/38015968814)
 
 ### Phase 7:部署驗證(K3s)
 - [ ] 更新 K8s manifest 映像 tag 為 `v0.21.6`
