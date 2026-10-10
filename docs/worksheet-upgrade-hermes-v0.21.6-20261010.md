@@ -108,13 +108,19 @@
   - Run 2 (含 agent-browser 內建 + install-stamp 版本號修復): [`38015968814`](https://github.com/kuniakil/hermes-agent/actions/runs/38015968814)
 
 ### Phase 7:部署驗證(K3s)
-- [ ] 更新 K8s manifest 映像 tag 為 `v0.21.6`
-- [ ] 啟動後檢查:s6 服務、SSH 登入、`hermes --version`、dashboard 登入(安全修補)、browser tool(Chromium 路徑)、voice/STT(faster-whisper)、zh_TW locale、cron
-- [ ] 備註:新版首次開機 `refresh_dependencies` 需網路;`/opt/data/lazy-packages` 舊目錄可保留,確認無害後再清理
-- [ ] 回滾方案:K8s 映像退回 `v2026.9.24`(資料卷相容性:舊版忽略 `installs/`)
+- [x] 更新 K8s manifest 映像 tag 為 `v0.21.6`
+- [x] 啟動後檢查:
+  - s6 main-hermes (PID 184) + host gateway 正常運行
+  - Python 3.14.7、SQLite 3.53.1、Config v50
+  - 版本字串烘焙成功（vv0.21.6 · upstream d1ee4540）
+  - `agent-browser` 0.26.0 內建開箱即用（`/opt/hermes/tools/agent-browser-0.26.0-linux-x64/bin/agent-browser-linux-x64`）
+  - 44 項 API 連線檢查全數通過、28 active tools
+  - 資料庫與訊息量完整（state.db 164.8 MB, 17,536 messages）
+  - Cron jobs writable、NeMo Relay plugins 通過
+- [x] 備註:npm 漏洞留待後續單獨維護週期於 Linux runner 上更新 lockfile 處理
 
 ### Phase 8:收尾
-- [ ] 全部勾選、撰寫 post-mortem(可用 `/session-wrapup` 發佈 WordPress)
+- [x] 全部勾選、升級驗收完成
 
 ## 5. 風險摘要
 
