@@ -106,6 +106,7 @@
 - [x] 記錄 GH Actions Run ID:
   - Run 1 (初版): [`38014333109`](https://github.com/kuniakil/hermes-agent/actions/runs/38014333109)
   - Run 2 (含 agent-browser 內建 + install-stamp 版本號修復): [`38015968814`](https://github.com/kuniakil/hermes-agent/actions/runs/38015968814)
+  - Run 3 (含 npm audit 漏洞全數修復歸零): [`38018469641`](https://github.com/kuniakil/hermes-agent/actions/runs/38018469641)
 
 ### Phase 7:部署驗證(K3s)
 - [x] 更新 K8s manifest 映像 tag 為 `v0.21.6`
