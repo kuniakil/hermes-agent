@@ -75,8 +75,21 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/tools
 # names (see .hermes/plans/termux-removal-commit-spec.md).
 RUN apt-get -o Acquire::Retries=3 update && \
     apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-    ca-certificates curl iputils-ping python3 python-is-python3 gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 procps git openssh-client docker-cli xz-utils \
+    ca-certificates curl iputils-ping python3 python-is-python3 gcc g++ make cmake python3-dev python3-venv libffi-dev libolm-dev libatomic1 procps git openssh-client openssh-server docker-cli xz-utils rsync locales \
     libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 && \
+    mkdir -p /var/run/sshd && ssh-keygen -A && \
+    echo "C.UTF-8 UTF-8" > /etc/locale.gen && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
+    echo "zh_TW.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen && \
+    echo "LANG=C.UTF-8" > /etc/default/locale && \
+    echo "LC_ALL=C.UTF-8" >> /etc/default/locale && \
+    echo "export LANG=C.UTF-8" >> /etc/profile && \
+    echo "export LC_ALL=C.UTF-8" >> /etc/profile && \
+    echo "export LANG=C.UTF-8" >> /home/node/.bashrc 2>/dev/null || true && \
+    echo "export LC_ALL=C.UTF-8" >> /home/node/.bashrc 2>/dev/null || true && \
+    echo "export LANG=C.UTF-8" >> /root/.bashrc && \
+    echo "export LC_ALL=C.UTF-8" >> /root/.bashrc && \
     rm -rf /var/lib/apt/lists/*
 
 # Bot Screen (opt-in): PACKAGES["apt"] from tools/bot_desktop/runtime.py plus apt
@@ -276,7 +289,8 @@ RUN touch ./README.md
 RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3 \
     --out /opt/hermes/.venv --no-install-project --sealed \
     --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock \
-    --extra azure-identity --extra matrix --extra google-chat
+    --extra azure-identity --extra matrix --extra google-chat \
+    --extra edge-tts --extra firecrawl --extra dingtalk --extra feishu --extra exa
 
 # Icons render on the runtime environment: Pillow and resvg-py are core
 # dependencies. A stage of its own so the frontend stage keeps building its
@@ -341,6 +355,11 @@ RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 # Shipping it root-owned means stage2 finds a directory it trusts and chowns it.
 RUN mkdir -p /tmp/hermes-runtime && chmod 0700 /tmp/hermes-runtime
 
+# Isolate npm global cache to /tmp (hermes user with remapped HERMES_UID
+# otherwise hits EACCES on /root/.npm; /opt/hermes is also read-only at runtime).
+# Stage2 re-applies this with sticky-bit on every boot as a defensive backup.
+RUN mkdir -p /tmp/.npm-cache && chmod 1777 /tmp/.npm-cache
+
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
 # --link decouples this layer from parents for cache purposes; --chmod bakes
@@ -353,6 +372,10 @@ COPY --link --chmod=a+rX,go-w . .
 
 # The shared assembler binds the prepared environment and frontend products.
 RUN /opt/hermes/.venv/bin/python -m docker.build_agent
+
+# Grant hermes user (UID 10000) ownership of /root/.npm so it can write
+# its package cache after s6 drops privileges. Stage2 self-heals this too.
+RUN mkdir -p /root/.npm /root/.cache && chown -R 10000:10000 /root/.npm /root/.cache
 
 # Wire the exec shim and install-method stamp.  Files under /opt/hermes are
 # already root-owned (COPY, dep assembly, npm install all run as root) and
@@ -447,6 +470,9 @@ ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_TUI_DIR=/opt/hermes/ui-tui
 ENV HERMES_HOME=/opt/data
 ENV HERMES_WRITE_SAFE_ROOT=/opt/data
+# Pin HOME to the data volume so non-root processes (npm, pip, sshd) don't
+# touch /root (which holds keys / caches we don't want hermes UID to see).
+ENV HOME=/opt/data
 # Opt-in backend SDKs install on first use into PM dependency generations under
 # /opt/data/installs (the sealed /opt/hermes/.venv is never written); stage2
 # re-resolves them against each new image. security.allow_lazy_installs: false
@@ -471,6 +497,10 @@ ENV XDG_RUNTIME_DIR=/tmp/hermes-runtime
 # the opt-out env var (HERMES_DOCKER_EXEC_AS_ROOT=1).
 COPY --chmod=0755 docker/hermes-exec-shim.sh /opt/hermes/bin/hermes
 COPY --chmod=0755 docker/entrypoint-dispatch.sh /opt/hermes/docker/entrypoint-dispatch.sh
+
+# Backward-compatible SSH entrypoint shim for Zeabur / custom deployments that
+# hard-code the legacy entrypoint path. Calls into entrypoint-dispatch.sh.
+COPY --chmod=0755 docker/entrypoint-ssh.sh /opt/hermes/docker/entrypoint-ssh.sh
 
 # Pre-s6 entrypoint.sh did `source .venv/bin/activate` which exported
 # the venv bin onto PATH; Architecture B's main-wrapper.sh does the
