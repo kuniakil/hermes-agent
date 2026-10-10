@@ -101,9 +101,9 @@
 - [x] 本 worksheet 勾選更新並 commit
 
 ### Phase 6:推送與 CI(需再次確認)
-- [ ] `git push kuniakil my-config-v0.21.6`(remote:`kuniakil` = 個人 fork,`origin` = 官方)
-- [ ] 使用者確認後打 tag 並推送,觸發 `ghcr-publish.yml`(amd64 + arm64 原生 runner)
-- [ ] 記錄 GH Actions Run ID
+- [x] `git push kuniakil my-config-v0.21.6`(remote:`kuniakil` = 個人 fork,`origin` = 官方)
+- [x] 觸發 `ghcr-publish.yml`(amd64 + arm64 原生 runner, tag_name=`v0.21.6`, platforms=`all`)
+- [x] 記錄 GH Actions Run ID: [`38014333109`](https://github.com/kuniakil/hermes-agent/actions/runs/38014333109)
 
 ### Phase 7:部署驗證(K3s)
 - [ ] 更新 K8s manifest 映像 tag 為 `v0.21.6`
