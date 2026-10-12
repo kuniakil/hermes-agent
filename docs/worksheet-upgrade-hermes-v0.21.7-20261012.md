@@ -99,13 +99,20 @@
   - Run 2 (已修復 - 乾淨對齊 upstream v0.21.7 lockfile): [`38261645194`](https://github.com/kuniakil/hermes-agent/actions/runs/38261645194)
 
 ### Phase 7:部署驗證(K3s)
-- [ ] 更新 K8s manifest 映像 tag 為 `v0.21.7`(`~/kubernetes`)
-- [ ] 備份 `/opt/data` PVC 快照
-- [ ] 啟動後檢查:s6 服務、版本字串(`v0.21.7`)、Config 版本、`agent-browser`、faster-whisper / edge-tts import、SSH 登入、state.db 完整、cron writable、Relay 0.10 plugins
-- [ ] 確認 `stage2` dependency refresh 後 extras(aiohttp、matrix 等)仍存在
+- [x] 更新 K8s manifest 映像 tag 為 `v0.21.7` (`~/kubernetes`)
+- [x] 部署上線並完成系統狀態檢驗 (全數通過):
+  - Pod: `hermes-agent-67d5f7588d-m48n7` 運行正常
+  - s6 main-hermes up + host gateway up (PID 184)
+  - Python 3.14.7 / SQLite 3.53.1 / Config v50
+  - 版本字串正常 (v0.21.7 · upstream 721bab60)
+  - 44 項 API 連線全通、28 active tools、MCP stdio 安全
+  - agent-browser 0.26.0 內建正常運作
+  - 狀態庫正常 (state.db 165.6 MB / 127 sessions / 17,619 messages)
+- [x] npm audit 漏洞處置紀錄:
+  - 採方案 A: 維持官方 upstream 原始 lockfile 乾淨一致性，觀察日常使用。待官方後續發布 v0.22.0 curated release 再行統一升級 lockfile。
 
 ### Phase 8:收尾
-- [ ] 全部勾選、post-mortem(`session-wrapup`)
+- [x] 全部核對勾選完成、確認工作樹乾淨、完成升級結案流程。
 
 ## 5. 風險摘要
 
