@@ -94,7 +94,9 @@
 ### Phase 6:推送與 CI(需再次確認)
 - [x] `git push kuniakil my-config-v0.21.7`
 - [x] 觸發 `ghcr-publish.yml`(amd64 + arm64, tag_name=`v0.21.7`, platforms=`all`)
-- [x] 記錄 GH Actions Run ID: [38260942404](https://github.com/kuniakil/hermes-agent/actions/runs/38260942404)
+- [x] 記錄 GH Actions Run ID:
+  - Run 1 (失敗 - lockfile 不匹配): [`38260942404`](https://github.com/kuniakil/hermes-agent/actions/runs/38260942404)
+  - Run 2 (已修復 - 乾淨對齊 upstream v0.21.7 lockfile): [`38261645194`](https://github.com/kuniakil/hermes-agent/actions/runs/38261645194)
 
 ### Phase 7:部署驗證(K3s)
 - [ ] 更新 K8s manifest 映像 tag 為 `v0.21.7`(`~/kubernetes`)
