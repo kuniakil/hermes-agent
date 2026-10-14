@@ -183,5 +183,25 @@
 
 ## 8. 遺留事項
 
-- [ ] **`.env` 的 `HERMES_IMAGE` 仍為 `v0.21.7`** — 該檔受 secrets 讀取防護(`**/*.env`)阻擋,agent 無法改動,需人工將 repo 根目錄 `.env` 的 `HERMES_IMAGE` 改為 `ghcr.io/kuniakil/hermes-agent:v0.22.0`(**僅影響本機 `docker compose` 路徑;k8s 走 overlay `newTag`,已完成**)。
+### 8.1 已由使用者處理
+
+- [x] `.env` 的 `HERMES_IMAGE` → `ghcr.io/kuniakil/hermes-agent:v0.22.0`(2026-10-14 使用者手動修改;該檔受 secrets 讀取防護 `**/*.env` 阻擋,agent 無法代改。僅影響本機 `docker compose` 路徑;k8s 走 overlay `newTag`,已完成)
+
+### 8.2 待處理
+
 - [ ] `overlays/mac/kustomization.yaml` 仍停在 `v2026.8.3`(歷史遺留,本次未觸及)。
+
+### 8.3 npm 漏洞:維持不修,但有觸發條件
+
+`hermes doctor` 回報 3 個 workspace 的 npm 漏洞,**v0.22.0 官方未修**(root `overrides` 在 v0.21.7→v0.22.0 位元組完全相同;#133435 / #132924 / #79021 發佈時仍 OPEN)。完整官方出處與實測分析見 `UPGRADE_LOG_v0.21.7_to_v0.22.0.md` **附錄 A**。
+
+**決策:不修。** 理由不是「修了不 persist」(對我們不成立),而是實測**真實暴露面為 0** —— 容器內僅 photon sidecar 一棵真實 runtime npm 樹(2 high / 0 critical),而 photon 未啟用;root / `web` / `ui-tui` 的 node_modules 皆不存在(只帶編譯產物)。
+
+**⚠️ 以下任一成立時必須重新評估:**
+
+- [ ] 啟用 **photon / iMessage** sidecar → 那 2 個 high 變成真實暴露面
+- [ ] 啟用 **web dashboard** / **ui-tui**(node 執行而非純靜態產物)
+- [ ] 官方關閉 #133435 / #132924 / #79021 → 改用官方修好的 lockfile
+- [ ] 上游改 `npm ci --omit=dev` 或把 electron 移出 lockfile → 重新量測暴露面
+
+**下次升級的檢查動作:** ①比對 `overrides` 前後兩版是否變動;②容器內 `find /opt/hermes -name node_modules -type d` 確認實際安裝的樹;③只對**實際存在**的那棵樹跑 `npm audit`(不要只看 doctor 的 lockfile 數字)。

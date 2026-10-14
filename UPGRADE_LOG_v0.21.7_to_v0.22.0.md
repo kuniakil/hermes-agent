@@ -71,3 +71,88 @@ cd ~/kubernetes/hermes/overlays/n100
 kubectl apply -k . && kubectl -n hermes rollout status deployment/hermes-agent
 ```
 舊 image `ghcr.io/kuniakil/hermes-agent:v0.21.7` 仍在 registry,可直接回滾。無 schema 遷移,回滾無 DB 風險。
+
+---
+
+## 附錄 A:npm 漏洞在 v0.22.0 仍未修 — 官方說明與我們的實測風險評估
+
+### A.1 結論先講
+
+**維持不修。** 但理由不是「修了也不會 persist」——那句對我們**不成立**(見 A.4)。正確理由是:**這些漏洞基本上不在我們 runtime,實際可利用風險為 0。**
+
+### A.2 官方怎麼說(三個權威來源)
+
+**① 程式碼內建說明** — `hermes_cli/doctor_tools.py:417` `_audit_one` docstring:
+
+> Every row here audits a tree whose versions come from a **COMMITTED lockfile** (`npm ci` … reifies exactly that state on every `hermes update`), so a local `npm audit fix` **never persists** … **The durable remedy in every case is a lockfile bump on `main`**; **the doctor therefore never prescribes a local mutating fix command.**
+
+它用 `check_warn` 而非 `check_fail`,並直接印出 `fix is an upstream lockfile bump — a local manual fix does not persist`。
+
+**② 官方掃描政策** — `.github/workflows/osv-scanner.yml`(本次 purge 掉的那批之一)檔頭:
+
+> This is **detection-only** — OSV-Scanner does NOT open PRs or modify pins. … Runs on a **weekly schedule against main**; deliberately **NOT part of per-PR CI** … `fail-on-vuln` is **disabled** so the job does not block merges on pre-existing vulnerabilities in pinned deps that we may need to patch deliberately.
+
+**③ 仍 OPEN 的官方 issue**(v0.22.0 發佈 2026-10-13 時狀態)
+
+| Issue | 內容 | 狀態 |
+|---|---|---|
+| [#133435](https://github.com/NousResearch/hermes-agent/issues/133435) | committed package-lock.json pins 18 high npm vulnerabilities — needs upstream lockfile refresh | OPEN(2026-10-05 開) |
+| [#132924](https://github.com/NousResearch/hermes-agent/issues/132924) | 7 remaining after npm audit fix | OPEN(2026-10-04 開) |
+| [#79021](https://github.com/NousResearch/hermes-agent/issues/79021) | Fix npm dependency vulnerabilities reported by hermes doctor | OPEN(2026-08-05 開) |
+
+#133435 已列出完整修復版本(`undici@6.29.0`、`electron@40.10.6`、`js-yaml@4.3.2`、`vitest@4.1.11`、`yaml@2.9.1`、`dompurify@3.4.16`、`brace-expansion@5.0.12`…),並明說 **No semver-major changes appear to be required** —— 只差一次 main 上的 lockfile refresh。
+
+**根因**(官方 PR #132601 自述):「Every one traces to a version pinned in the **root `overrides` block**, so a local `npm audit fix` cannot resolve them」。
+
+### A.3 為何 v0.22.0 沒修(已實測比對)
+
+- **root `package.json` 的 `overrides` block 在 v0.21.7 → v0.22.0 之間位元組完全相同**,官方這版一個 pin 都沒調。
+- 三個 issue 在發佈當日都還開著。
+- 官方 osv-scanner 是 weekly 掃 main、findings 不 block merge → 沒有修復截止日。
+
+所以「v0.22.0 才會全面刷新 lockfile」的預期**沒有發生**。這不是我們漏做,是上游主動沒做。
+
+### A.4 我們的實測:暴露面接近於零
+
+doctor 報 3 個 workspace,但那是 **lockfile 宣告**的,不是實際安裝的。全盤掃描容器:
+
+| 樹 | lockfile 宣告 | runtime 實際 |
+|---|---|---|
+| root `/opt/hermes/node_modules` | electron、vitest、undici、axios…(37) | **只有 `typescript`** |
+| `web` | 7 | **不存在**(只帶編譯產物) |
+| `ui-tui` | 5 | **不存在**(只帶編譯產物) |
+| `agent-browser` | 3 | 獨立 binary,**零 npm 依賴** |
+| photon sidecar | — | **70 packages(`spectrum-ts`)** ← 唯一真實 runtime npm 樹 |
+
+全盤 `find` 確認容器內僅 3 個 `node_modules`:`node`/`npm` 自身、photon sidecar、`/opt/hermes/node_modules`。`bot_desktop` 為純 Python + Xvnc,無 electron。原因是 Dockerfile 只 COPY **編譯後產物**(`/opt/products/tui`、`/opt/products/web`),electron / vitest / electron-builder 這類 desktop 與測試工具**未進成品映像**。
+
+**真實暴露面**:
+
+```
+photon sidecar(唯一 runtime npm 樹):  0 critical,  2 high
+  ├─ @grpc/grpc-js   1.14.0–1.14.4
+  └─ undici          7.0.0–7.29.0
+```
+
+而 **photon 我們未啟用**(config 提及 0 次、相關進程 0 個)→ **實際可利用風險 = 0**。
+
+### A.5 為什麼「官方說不能 persist」對我們不成立
+
+官方描述的是 `hermes update` 路徑會 `npm ci` 從 committed lockfile 重新還原。**我們的部署不使用 `hermes update`** —— 我們是從 git branch 用 `npm ci` build,lockfile bump 在我們的分支上**會 persist**,且下次升級可 cherry-pick 延續(SOP 亦如此要求)。
+
+所以正確表述是:**不是「修不了」,而是「修不到有價值的地方」**。為了讓 `hermes doctor` 警告消失而改 lockfile,是為了過掃描而過掃描,反而增加每次升級的衝突面。
+
+### A.6 ⚠️ 決策觸發條件(下次升級務必帶著)
+
+維持「不修」的前提是 **runtime 暴露面為 0**。以下任一情況成立時,**必須重新評估並改用 root `overrides` 蓋掉**(官方 PR #132601 的做法):
+
+- [ ] 啟用 **photon / iMessage** sidecar → 那 2 個 high(`@grpc/grpc-js`、`undici`)變成真實暴露面
+- [ ] 啟用 **web dashboard**(`web_dist` 開始以 node 執行伺服器端而非純靜態產物)
+- [ ] 啟用 **ui-tui** 的 runtime JS bundle 依賴
+- [ ] 官方關閉 #133435 / #132924 / #79021 → 改用官方修好的 lockfile,而非自行覆寫
+- [ ] 上游改用 `npm ci --omit=dev` 或把 electron 移出 lockfile → doctor 數字驟降,可重新量測真實暴露面
+
+**每次升級的檢查動作**:
+1. 比對 root `package.json` `overrides` 在前後兩版是否變動(本次:**完全相同**,官方未修)
+2. 在容器內跑一次 `find /opt/hermes -name node_modules -type d`,確認實際安裝的樹(不要只看 `npm audit` 的 lockfile 數字)
+3. 對**實際存在**的那棵樹跑 `npm audit` 才是有意義的暴露面
