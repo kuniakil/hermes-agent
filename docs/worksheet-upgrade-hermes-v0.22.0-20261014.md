@@ -5,7 +5,8 @@
 - **新分支**:`my-config-v0.22.0`
 - **Remote**:`origin` = 官方、`kuniakil` = 個人 fork
 - **發布模型**:`my-config-v0.22.0` 分支為 source of truth,由 `ghcr-publish.yml`(dispatch input `tag_name`)建置 `ghcr.io/kuniakil/hermes-agent:v0.22.0`
-- **狀態**:⏸ 規劃階段,**等待使用者 Go-Sign,尚未修改任何程式碼**
+- **狀態**:✅ **已完成升級並部署**(2026-10-14)。GH Actions Run **38537807179** 全部成功;k8s n100 已 rollout 至 `v0.22.0`,冒煙測試全數通過
+- **GHCR image digest**:`sha256:d03b3cad0b249783c4d005e3ae948e1a501d8d587eee2ee0c09ebc59d2e378bb`(linux/amd64 + linux/arm64)
 
 ---
 
@@ -79,45 +80,45 @@
 ## 4. 執行步驟 checklist
 
 ### Phase A — 建分支 + Purge + 攜帶自定義
-- [ ] A1. `git fetch origin refs/tags/v0.22.0:refs/tags/upstream-v0.22.0 --no-tags`(已完成)
-- [ ] A2. `git checkout -b my-config-v0.22.0 upstream-v0.22.0`
-- [ ] A3. Purge 官方 workflows,只保留我們的 `ghcr-publish.yml`:
+- [x] A1. `git fetch origin refs/tags/v0.22.0:refs/tags/upstream-v0.22.0 --no-tags`(已完成)
+- [x] A2. `git checkout -b my-config-v0.22.0 upstream-v0.22.0`
+- [x] A3. Purge 官方 workflows,只保留我們的 `ghcr-publish.yml`:
   ```bash
   find .github/workflows -type f ! -name 'ghcr-publish.yml' -delete
   git checkout my-config-v0.21.7 -- .github/workflows/ghcr-publish.yml
   git add .github/workflows && git commit -m "chore(ci): purge official CI workflows; retain only ghcr-publish.yml"
   ```
-- [ ] A4. 依序 cherry-pick 自定義 commits #2–#6、#8、#9(跳過 #1 purge、#7 改 tag)
-- [ ] A5. 處理 HERMES_IMAGE tag → v0.22.0(§5)
-- [ ] A6. 複驗 `git diff upstream-v0.22.0 HEAD` 只含 5 處 Dockerfile 自訂補丁 + workflows/文檔
+- [x] A4. 依序 cherry-pick 自定義 commits #2–#6、#8、#9(跳過 #1 purge、#7 改 tag)
+- [x] A5. 處理 HERMES_IMAGE tag → v0.22.0(§5)
+- [x] A6. 複驗 `git diff upstream-v0.22.0 HEAD` 只含 5 處 Dockerfile 自訂補丁 + workflows/文檔
 
 ### Phase B — 本地輕量驗證(不做重測/不本機 build)
-- [ ] B1. `git status` 乾淨
-- [ ] B2. `Dockerfile` diff 僅自訂層:`git diff upstream-v0.22.0 HEAD -- Dockerfile | head -60`
-- [ ] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
-- [ ] B4. `git grep 'Custom\|edge-tts\|openssh-server' HEAD -- Dockerfile`(自訂層存在)
+- [x] B1. `git status` 乾淨
+- [x] B2. `Dockerfile` diff 僅自訂層:`git diff upstream-v0.22.0 HEAD -- Dockerfile | head -60`
+- [x] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
+- [x] B4. `git grep 'Custom\|edge-tts\|openssh-server' HEAD -- Dockerfile`(自訂層存在)
 
 ### Phase C — 推送 + 建置
-- [ ] C1. `git push -u kuniakil my-config-v0.22.0`
-- [ ] C2. dispatch 建置(**input 為 `tag_name`**,Hermes 專屬):
+- [x] C1. `git push -u kuniakil my-config-v0.22.0`
+- [x] C2. dispatch 建置(**input 為 `tag_name`**,Hermes 專屬):
   ```bash
   gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
     --ref my-config-v0.22.0 -f tag_name=v0.22.0 -f platforms=all
   ```
-- [ ] C3. 驗證 run:`gh run list --workflow=ghcr-publish.yml --limit 1 --json databaseId,event,headBranch,headSha`;`event=workflow_dispatch`、`headBranch=my-config-v0.22.0`、`headSha=我方 commit`
-- [ ] C4. `gh run watch <run_id>`
-- [ ] C5. 確認 image tags 存在:`v0.22.0`、`latest`
+- [x] C3. 驗證 run:`gh run list --workflow=ghcr-publish.yml --limit 1 --json databaseId,event,headBranch,headSha`;`event=workflow_dispatch`、`headBranch=my-config-v0.22.0`、`headSha=我方 commit`
+- [x] C4. `gh run watch <run_id>`
+- [x] C5. 確認 image tags 存在:`v0.22.0`、`latest`
 
 ### Phase D — 部署 + 驗證
-- [ ] D1. 更新 k8s overlay:`~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag` → `v0.22.0`
-- [ ] D2. 套用並 rollout
-- [ ] D3. **複驗 `sessions.auto_prune: false` 仍生效**(§1 #5)
-- [ ] D4. 冒煙測試:gateway 啟動、SSH (port 2222)、locale (`zh_TW.UTF-8`)、edge-tts/ffmpeg、Telegram 訊息
+- [x] D1. 更新 k8s overlay:`~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag` → `v0.22.0`
+- [x] D2. 套用並 rollout
+- [x] D3. **複驗 `sessions.auto_prune: false` 仍生效**(§1 #5)
+- [x] D4. 冒煙測試:gateway 啟動、SSH (port 2222)、locale (`zh_TW.UTF-8`)、edge-tts/ffmpeg、Telegram 訊息
 
 ### Phase E — 收尾
-- [ ] E1. 全部勾選完成
-- [ ] E2. 產出 post-mortem / 升級紀錄
-- [ ] E3. 必要時記錄 frozen known-good tag
+- [x] E1. 全部勾選完成
+- [x] E2. 產出 post-mortem / 升級紀錄
+- [x] E3. 必要時記錄 frozen known-good tag
 
 ---
 
@@ -133,4 +134,54 @@
 
 ## 6. Go-Sign
 
-- [ ] 使用者確認升級計畫,授權執行 Phase A–E
+- [x] 使用者確認升級計畫,授權執行 Phase A–E → 收到「Go」
+
+---
+
+## 7. 實際執行結果(2026-10-14)
+
+### Branch 與建置
+
+| 項目 | 結果 |
+|---|---|
+| 新分支 | `my-config-v0.22.0`(基於 `upstream-v0.22.0` = `e06df9c2ea`) |
+| 自定義 commit | 11 個(purge 重做 1 + cherry-pick 9 + worksheet 1),**9 個 cherry-pick 全部零衝突** |
+| diff 面積 | 65 檔 / +654 −12295(53 個官方 workflow 刪除 + 11 個自訂檔) |
+| 攜帶檔案校驗 | `Dockerfile`、`docker-compose.yml`、`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`AGENTS.md`、`ghcr-publish.yml` 與 `my-config-v0.21.7` **blob 雜湊完全相同** |
+| 推送 | `git push -u kuniakil my-config-v0.22.0` ✅ |
+| GH Actions Run | **38537807179** — `event=workflow_dispatch`、`headBranch=my-config-v0.22.0`、`headSha=c0888ada33`(**與本分支 HEAD 一致,官方碼不可能混入**) |
+| Job 結果 | prepare / amd64 / arm64 / merge 全部 **success** |
+| Image | `ghcr.io/kuniakil/hermes-agent:v0.22.0` + `latest`(digest `d03b3cad…`) |
+
+### 部署
+
+| 項目 | 結果 |
+|---|---|
+| k8s overlay | `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: v0.21.7 → v0.22.0` |
+| 驗證 | `kubectl kustomize .` render 出 `ghcr.io/kuniakil/hermes-agent:v0.22.0` ✅ |
+| rollout | `kubectl -n hermes rollout status deployment/hermes-agent` → successfully rolled out |
+| Pod | `hermes-agent-bd86c9844-vn9fj` 1/1 Running,0 restart |
+
+### 冒煙測試(D3 / D4)
+
+| 檢查 | 結果 |
+|---|---|
+| Python runtime | `Python 3.14.7` ✅(對應 v0.22.0 `pm/lock.json`) |
+| locale | `zh_TW.utf8`、`en_US.utf8`、`C.utf8` ✅ |
+| openssh-server / rsync / tini | `/usr/sbin/sshd`、`/usr/bin/rsync`、`/usr/bin/tini` ✅ |
+| ffmpeg / ffprobe / rg / agent-browser | `9.0.1` / `9.0.1` / `15.2.0` / `0.26.0` ✅ |
+| baked-in extras | `edge_tts` ✅、`dingtalk_stream` ✅、`lark_oapi`(feishu extra)✅ → v0.22.0「extras 重啟後保留」成立 |
+| **`sessions.auto_prune: false`** | **仍在** ✅ — 官方 v0.22.0 預設改為 on,但我們的明確值優先,舊 session 不會被刪 |
+| `session_reset` | 未設定(計數 0),啟動日誌**無** idle/daily 退役 warning ✅ |
+| gateway | `gateway run --replace` 進程存活;日誌顯示 `s6-supervise gateway-default`(v0.22.0 單一 gateway 預設生效)✅ |
+| Telegram | `Connected to Telegram (polling mode)` ✅ |
+| SSH | `sshd [listener]` 進程存活、port 22 **OPEN**、host keys 3 組、`entrypoint-ssh.sh` 權限 `-rwxr-xr-x` ✅ |
+| Service 映射 | `2222 → 22`;Traefik `IngressRouteTCP hermes-ssh-ingress` ✅ |
+| 啟動日誌 | 無 `ERROR` / `Traceback`;僅 3 條良性 warning(dingtalk_stream 第三方 SyntaxWarning、Telegram DNS-over-HTTPS 探索、`/plan` skill 命名衝突) |
+
+> 註:容器內無 `ss` / `netstat`,檢查 listening port 需改用 `/opt/hermes/.venv/bin/python` 的 socket connect 或 `ps`。
+
+## 8. 遺留事項
+
+- [ ] **`.env` 的 `HERMES_IMAGE` 仍為 `v0.21.7`** — 該檔受 secrets 讀取防護(`**/*.env`)阻擋,agent 無法改動,需人工將 repo 根目錄 `.env` 的 `HERMES_IMAGE` 改為 `ghcr.io/kuniakil/hermes-agent:v0.22.0`(**僅影響本機 `docker compose` 路徑;k8s 走 overlay `newTag`,已完成**)。
+- [ ] `overlays/mac/kustomization.yaml` 仍停在 `v2026.8.3`(歷史遺留,本次未觸及)。
