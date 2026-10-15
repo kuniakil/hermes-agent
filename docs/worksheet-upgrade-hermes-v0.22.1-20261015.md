@@ -6,7 +6,7 @@
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork
 - **發布模型**：`my-config-v0.22.1` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.22.1`
 - **狀態**：✅ **已完成升級並部署**（2026-10-15）。GH Actions Run **38691266688** 全部成功；n100 已 rollout 至 `v0.22.1`，冒煙測試全數通過
-- **最終 HEAD**：`81bc37f7965ffd055c966d05bc8b06237977c884`
+- **最終 HEAD**：`50211a022c45d302019a2c4ca049707578d2638e`（含 `.env` 修復）
 - **GHCR digest**：`sha256:c98934da35a5ea6e26930b6cf5ed843b9b4ca0da877e0aeb5d90f9d33d3776f6`
 - **升級紀錄**：`UPGRADE_LOG_v0.22.0_to_v0.22.1.md`
 - **日期**：2026-10-15
@@ -199,7 +199,15 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 
 > 🔴 **執行後修正**：#7 與 #9b **兩個 commit 修改的都是 `.env`**（非 docs）。當時把 #9b 誤歸類為「docs 歷史文檔」而標記為「⏭ 跳過（改由 §5 處理）」，導致 **`.env` 未被帶入 `my-config-v0.22.1`**。
 > 因 `.env` 在 `my-config-v0.22.0` 是**被 git 追蹤**的，`git checkout -b ... upstream-v0.22.1` 時 git 直接將其**從 working tree 刪除**。
-> 影響僅限本機 `docker compose` 路徑（k8s 走 overlay `newTag`，不受影響）。修復方式見 `UPGRADE_LOG_v0.22.0_to_v0.22.1.md` §6.1。
+> 影響僅限本機 `docker compose` 路徑（k8s 走 overlay `newTag`，不受影響）。**已於 2026-10-15 修復** → `50211a022c`，`docker compose config` 驗證通過。
+
+> 📌 **SOP 教訓（下次必做）**：分支重建後，除了驗證 Dockerfile 標記與 blob 雜湊，還必須驗證**「被 gitignore 但已被追蹤」的檔案**是否帶到新分支 —— 這類檔不會出現在 `git ls-files` 的常規檢查視線裡，卻會在切分支時被 git 刪除。本次可用以下指令偵測：
+> ```bash
+> # 舊分支有、新分支沒有的「被追蹤但被 gitignore」檔案
+> comm -23 <(git ls-tree -r my-config-v<old> --name-only | sort -u) \
+>          <(git ls-tree -r my-config-v<new> --name-only | sort -u) \
+>   | git check-ignore --stdin --no-index 2>/dev/null
+> ```
 
 ---
 

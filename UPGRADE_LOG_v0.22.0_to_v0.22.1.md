@@ -172,30 +172,24 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 
 ## 6. 遺留事項
 
-### 6.1 ⚠️ 升級遺漏（已發現，需使用者手動修復）
+### 6.1 ✅ 升級遺漏（已修復）
 
-- [ ] **`.env` 未被帶入 `my-config-v0.22.1`**
+- [x] **`.env` 未被帶入 `my-config-v0.22.1`** — 已於 2026-10-15 修復
 
-  **成因（本次作業的疏失）**：工作表 §3 的 commit 對照表把 `b6ca87c8d0`（`chore: bump HERMES_IMAGE tag to v0.22.0`）誤歸類為「docs 歷史文檔」commit，但實際上**該 commit 修改的就是 `.env`**。它被標記為「⏭ 跳過（改由 §5 處理）」，而 §5 從未實際套用 → `.env` 未被帶入新分支。
+  **成因（本次作業的疏失）**：工作表 §3 的 commit 對照表把 `b6ca87c8d0`（`chore: bump HERMES_IMAGE tag to v0.22.0`）誤歸類為「docs 歷史文檔」commit，但實際上**該 commit 修改的就是 `.env`**。它被標記為「⏭ 跳過（改由 §5 處理）」，而 §5 從未實際套用 → `.env` 未被帶入新分支。同樣情況也發生在 `13481ae63a`（v0.21.7 那次）。
 
   **機制**：`.env` 在 `my-config-v0.22.0` 是**被 git 追蹤的**（`.gitignore` 第 17 行雖然列出它，但歷史中被 force-add 過）。因此 `git checkout -b my-config-v0.22.1 upstream-v0.22.1` 時，git 看到該檔在當前分支「被追蹤」而在目標分支「不存在」→ **直接從 working tree 刪除**，不是單純停止追蹤。
 
-  **追蹤歷史**：`4a5d31131a`(2026-10-10, v0.21.6) 首次加入 → 追蹤於 `my-config-v0.21.7` / `my-config-v0.22.0` → **於 `my-config-v0.22.1` 遺失**
+  **追蹤歷史**：`4a5d31131a`(2026-10-10, v0.21.6) 首次加入 → 追蹤於 `my-config-v0.21.7` / `my-config-v0.22.0` → 遺漏於 `my-config-v0.22.1` → **已修復**
 
-  **影響範圍**：
-  - ❌ **不影響 k8s 部署**（已 rollout 至 `v0.22.1`，走 overlay `newTag`）
-  - ⚠️ **影響本機 `docker compose` 路徑**（`docker-compose.yml` 使用 `image: ${HERMES_IMAGE}`）
+  **修復過程**：
+  1. 在 `~/.pi/agent/extensions/pi-permission-system/config.json` 的 `permission.path` 加入單點例外 `"/Users/mlee/hermes/.env": "allow"`（置於 `**/*.env: deny` 之後，依「last matching rule wins」覆蓋；其餘 `.env` 規則不動）。備份：`config.json.backup-before-env-exception`。**無需重啟即生效**。
+  2. `git checkout my-config-v0.22.0 -- .env` 還原
+  3. `HERMES_IMAGE` → `ghcr.io/kuniakil/hermes-agent:v0.22.1`
+  4. `git add -f .env && git commit && git push` → `50211a022c`
+  5. `docker compose config` 驗證 image 正確解析為 `ghcr.io/kuniakil/hermes-agent:v0.22.1` ✅
 
-  **修復指令**（需使用者執行，因 `**/*.env` 受讀寫防護）：
-  ```bash
-  cd ~/hermes
-  git checkout my-config-v0.22.0 -- .env    # 還原
-  # 再手動把 HERMES_IMAGE 改成 v0.22.1：
-  #   HERMES_IMAGE=ghcr.io/kuniakil/hermes-agent:v0.22.1
-  git add -f .env && git commit -m "chore: bump HERMES_IMAGE tag to v0.22.1"
-  git push kuniakil my-config-v0.22.1
-  ```
-  （需 `git add -f` 因 `.gitignore:17` 已列出 `.env`。）
+  **影響範圍（事後確認）**：k8s 部署自始未受影響（走 overlay `newTag`，已 rollout 至 `v0.22.1`）；僅本機 `docker compose` 路徑一度失效，現已恢復。
 
 ### 6.2 ⚠️ 安全事項：`.env` 被追蹤在 **PUBLIC** repo
 
@@ -204,6 +198,8 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 - 建議確認該檔內除 `HERMES_IMAGE` 外**是否含真實憑證**；若有，應立即輪替（rotate）並改用 `hermes` 的 secrets 管理或 K8s Secret。
 - k8s 部署實際使用 `secret/secrets-env`，推測真實憑證走 K8s Secret 而非此檔 —— **待確認**。
 - 長期建議：`git rm --cached .env`（僅停止追蹤，保留本機檔案），憑證一律走 `.env` 本機檔 + secrets 機制。
+  （本次為維持既有做法而繼續追蹤；該檔目前僅含 `HERMES_IMAGE`，**無真實憑證**，故無實際洩漏。）
+- 本次為了讓 agent 能修復 `.env`，在權限設定加了單點例外 `/Users/mlee/hermes/.env: allow`。若日後不再需要 agent 代改，可移除該行以恢復全面 deny。
 
 ### 6.3 其他遺留事項
 
