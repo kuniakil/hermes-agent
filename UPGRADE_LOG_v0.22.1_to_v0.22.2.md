@@ -160,3 +160,51 @@ FK 阻擋的 session  : 1 / 127  ← 只有「系統升級檢查」(20260708_133
 - [ ] `sessions_runtime_ledger_delete_guard` trigger 保留在 DB（已失效）。升 v0.23 後會重新生效，屆時是正確行為。
 - [ ] 殘留空表 `session_admissions` / `worker_executions` / `worker_receipts` + `runtime_epoch`(1 列)。不 DROP，留作回滾證據；若未來要清理，先確認已升 v0.23。
 - [ ] 本機 `.env` 的 `HERMES_IMAGE` 仍為舊值（k8s 走 `newTag` 不受影響，Mac 本機 `docker compose` 才用得到）。
+
+---
+
+## 8. ⚠️ 附錄：trigger 清理的危險性（2026-10-15 追加）
+
+### 8.1 事件
+
+升級後的系統檢查回報「**3 個 trigger 殘留（已失效）**」——**這是錯的**。實際只有 **1 個**。
+
+```
+trigger 總數：12
+  messages 表：11 個 → messages_fts_insert / _delete / _update / _trigram_*
+                        / messages_message_uid_insert
+                        （全文檢索索引維護用，**pre-existing，非殘留，運作中**）
+  sessions  表： 1 個 → sessions_runtime_ledger_delete_guard
+                        （**唯一**的 v0.22.1 殘留，因 ledger 表已空而失效）
+```
+
+「3 個」這個數字推測是把「**3 張** ledger 表」（`session_admissions` / `worker_executions` / `worker_receipts`）與 trigger 混淆了 —— 兩者都是 3，極易誤記。
+
+### 8.2 為什麼這個誤判有實際風險
+
+若照「殘留 trigger 已失效，可以清理」的理解去 `DROP TRIGGER`：
+
+> **會直接破壞全文檢索功能**（`hermes sessions search` / session 搜尋失效）。
+
+驗證基準（可隨時複查）：
+
+```sql
+-- messages_fts 列數應與 messages 完全一致；不一致代表 FTS trigger 被破壞
+SELECT (SELECT COUNT(*) FROM messages_fts) AS fts,
+       (SELECT COUNT(*) FROM messages)     AS msgs;
+-- 本次實測：17667 / 17667 ✅
+```
+
+### 8.3 正確的清理判準
+
+| trigger | 處置 |
+|---|---|
+| `messages_*`（11 個，FTS 維護） | 🚫 **絕對不可動**。它們是搜尋功能的運作前提，不是殘留 |
+| `sessions_runtime_ledger_delete_guard` | 🟡 可留可棄。當前失效（`WHEN` 查的兩張表已空）；升 v0.23 後該機制會回來，這個 trigger 會**重新生效且是正確行為**，屆時不應再手動刪 |
+
+### 8.4 方法論教訓
+
+> **判斷「殘留物件」時，必須先回答兩個問題：(1) 它是本次改動產生的，還是本来就存在？(2) 它現在有沒有在做事？**
+>
+> 本次兩個問題的答案都是「不是 / 有」，但只看 trigger 名稱和數量就下「已失效可清理」的結論，是危險的。
+> 未來清 DB 殘留物時，先跑上面那條 `messages_fts` 對帳 SQL 作為基準線。
