@@ -156,17 +156,66 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 
 ---
 
-## 5. npm 漏洞決策複驗（承 v0.22.0 §8.3）
+## 5. npm 漏洞：官方**未修復**，「已清光」是假陰性
 
-| 檢查 | 結果 |
-|---|---|
-| ① 根 `package-lock.json` `overrides` 前後是否變動 | ❌ **未變動**（皆 `{}`）→ 原決策前提成立 |
-| ② 容器內實際 node_modules 樹 | 維持 v0.22.0 實測結論：僅 photon sidecar 一棵真實 runtime 樹，且未啟用 |
-| ③ 只對實際存在的樹跑 npm audit | 本次無需重測（暴露面未變） |
+### 5.1 結論
 
-額外收穫：官方本次 `Deps: bump the WhatsApp bridge lock past its npm-audit findings` 與 `Doctor: clarify Docker npm audit remediation` —— 已修項目我們本來就沒部署。
+**v0.22.1 並未修復 npm 漏洞。** 三個追蹤 issue 全部仍為 OPEN：
 
-**維持「不修」決策，觸發條件不變**：啟用 photon / iMessage sidecar、web dashboard、或 ui-tui（node 執行而非純靜態產物）時必須重評。
+| Issue | 標題 | 狀態 |
+|---|---|---|
+| [#133435](https://github.com/NousResearch/hermes-agent/issues/133435) | committed package-lock.json pins 18 high npm vulnerabilities (undici, electron, axios, js-yaml…) | **OPEN** |
+| [#132924](https://github.com/NousResearch/hermes-agent/issues/132924) | 7 remaining after npm audit fix | **OPEN** |
+| [#79021](https://github.com/NousResearch/hermes-agent/issues/79021) | Fix npm dependency vulnerabilities reported by hermes doctor | **OPEN** |
+
+### 5.2 v0.22.1 的實際變更
+
+根 `package-lock.json` 在兩版間**共 1,430 個套件、無新增無移除、僅 16 個版本變動**，全部為 patch/minor 等級：
+
+`@vitest/*` + `vitest` 4.1.10→4.1.11 · `brace-expansion` 5.0.9→5.0.12 · `js-yaml` 4.3.1→4.3.2 · `node-gyp/undici` + `ui-tui/undici` 6.28.0→6.29.0 · `source-map-js` 1.2.1→1.2.2 · `tinyrainbow` 3.1.0→3.1.1 · `undici` 7.29.0→7.30.0 · `yaml` 2.8.1→2.9.1
+
+對照 #133435 明列的修復清單：`electron@40.10.6` ❌ 未動、`dompurify@3.4.16` ❌ 未動、`axios` ❌ 未動。**4 critical 涉及的 `simple-git` / `@simple-git/argv-parser` / `concurrently` / `shell-quote` 全部未動。**
+
+**關鍵：`plugins/platforms/photon/sidecar/package-lock.json` 與 `website/package-lock.json` 兩版間位元組完全相同。** 唯一有實質 audit 修復的是 `scripts/whatsapp-bridge/package-lock.json`（+169 −121），但該元件我們未部署。
+
+### 5.3 為何 `hermes doctor` 會報「0 vulnerabilities」
+
+1. **不是網路問題**：已驗證 pod 內 `npm audit` 可正常連 advisory DB 並回傳真實結果。
+2. **真正原因**：容器內 web / ui-tui **沒有 node_modules**。Dockerfile 只 COPY 編譯產物（`/opt/products/web`、`/opt/products/tui`），electron / vitest / electron-builder 這類 desktop 與測試工具**從未進入成品映像**。`hermes doctor` 對著幾乎為空的樹跑 audit，自然回 0。
+3. **可用方法**：`npm audit --package-lock-only`（直接讀 lockfile 比對 advisory DB，不依賴 node_modules 是否存在）—— 這才是有效的量測手段。
+
+### 5.4 v0.22.1 pod 實測（container 內 census）
+
+| 樹 | v0.22.0 附錄量測 | v0.22.1 實測 | 判定 |
+|---|---|---|---|
+| **photon sidecar**（唯一真實 runtime npm 樹） | 0 crit / 2 high（`@grpc/grpc-js`、`undici`） | **0 crit / 2 high（`@grpc/grpc-js`、`undici`）** | ✅ 完全一致，lockfile 位元組相同 |
+| `/opt/hermes/node_modules` | — | 僅 1 個套件：`typescript` | 未變 |
+| electron / vitest / electron-builder | 未安裝 | **未安裝** | lockfile 漏洞的來源，image 內不存在 |
+| 根 lockfile（`--package-lock-only`） | — | **27 個**（4 crit / 7 high / 7 mod / 9 low） | 真實待修數量 |
+
+**根 lockfile 的 4 critical + 7 high 全部屬未安裝套件**：`simple-git`、`@simple-git/argv-parser`、`concurrently`、`shell-quote`（critical）；`electron`、`axios`、`joi`、`extract-zip`、`@xmldom/xmldom`、`fast-uri`、`http-cache-semantics`（high）。這些僅存在於 lockfile 記錄，image 內不存在。
+
+### 5.5 決策（不變）
+
+維持「不修」，理由與觸發條件與 v0.22.0 附錄 A.4 一致：
+
+- 根 lockfile 的 27 個漏洞對應的套件**未進入成品映像**（`/opt/hermes/node_modules` 僅有 `typescript`）
+- photon sidecar 是唯一真實 runtime npm 樹，**未啟用**（config 提及 0 次、相關進程 0 個）
+- v0.22.1 未改動 photon lockfile，暴露面**沒有變化**
+
+**⚠️ 觸發條件（任一成立即必須重新評估並改用 root `overrides`）：**
+
+- [ ] 啟用 **photon / iMessage** sidecar（節點上 2 high `@grpc/grpc-js`、`undici` 轉為真實暴露）
+- [ ] 啟用 **web dashboard** / **ui-tui**（將引入 electron 等 27 個漏洞對應的套件）
+- [ ] 官方關閉 #133435 / #132924 / #79021 → 改用官方修好的 lockfile
+- [ ] 上游改用 `npm ci --omit=dev` 或將 electron 移出 lockfile → 重新量測暴露面
+
+**下次升級的檢查動作：**
+
+1. 比對 `overrides` 前後兩版是否變動（本次：皆 `{}`，未變）
+2. 對兩個版本各跑 `npm audit --package-lock-only`（**不要**用 `hermes doctor` 的數字）
+3. 容器內 `find /opt/hermes -name node_modules -type d` 確認實際安裝的樹
+4. 確認 3 個追蹤 issue 的狀態
 
 ---
 
