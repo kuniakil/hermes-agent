@@ -5,7 +5,10 @@
 - **新分支**：`my-config-v0.22.1`
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork
 - **發布模型**：`my-config-v0.22.1` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.22.1`
-- **狀態**：⏸ **等待 Go-Sign**（Phase 1 已完成，Phase A–E 未執行）
+- **狀態**：✅ **已完成升級並部署**（2026-10-15）。GH Actions Run **38691266688** 全部成功；n100 已 rollout 至 `v0.22.1`，冒煙測試全數通過
+- **最終 HEAD**：`81bc37f7965ffd055c966d05bc8b06237977c884`
+- **GHCR digest**：`sha256:c98934da35a5ea6e26930b6cf5ed843b9b4ca0da877e0aeb5d90f9d33d3776f6`
+- **升級紀錄**：`UPGRADE_LOG_v0.22.0_to_v0.22.1.md`
 - **日期**：2026-10-15
 
 ---
@@ -197,60 +200,50 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 ## 4. 執行步驟 checklist
 
 ### Phase A — 建分支 + Purge + 攜帶自定義
-- [ ] A1. `git fetch origin refs/tags/v0.22.1:refs/tags/upstream-v0.22.1 --no-tags`（已完成）
-- [ ] A2. `git checkout -b my-config-v0.22.1 upstream-v0.22.1`
-- [ ] A3. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`：
-  ```bash
-  find .github/workflows -type f ! -name 'ghcr-publish.yml' -delete
-  git checkout my-config-v0.22.0 -- .github/workflows/ghcr-publish.yml
-  git add .github/workflows && git commit -m "chore(ci): purge official CI workflows; retain only ghcr-publish.yml"
-  ```
-- [ ] A4. cherry-pick commit #2、#3、#4、#5（`docker/entrypoint-ssh.sh` / `docker-compose.yml` / `AGENTS.md` / `stage2-hook.sh`）
-- [ ] A5. **手動重做 Dockerfile 8 處自訂補丁**（以 `upstream-v0.22.1` 為基底；hunk #4 需與上游 `--cache` **並存**）：
-  - [ ] A5.1 apt：`openssh-server` `rsync` `locales` + `ssh-keygen -A` + locale-gen（C / en_US / zh_TW）
-  - [ ] A5.2 `useradd -s /bin/bash`
-  - [ ] A5.3 pm ensure + symlink 加 `agent-browser`
-  - [ ] A5.4 `build_env --extra edge-tts firecrawl dingtalk feishu exa`（**保留上游 `--cache /opt/hermes/uv-cache` 行**）
-  - [ ] A5.5 `/tmp/.npm-cache` 1777
-  - [ ] A5.6 `/root/.npm` `/root/.cache` chown 10000
-  - [ ] A5.7 `ENV HOME=/opt/data`
-  - [ ] A5.8 `COPY docker/entrypoint-ssh.sh`
-- [ ] A6. 複驗 `git diff upstream-v0.22.1 HEAD -- Dockerfile` = **恰好 8 個 hunk**、且含 `--cache /opt/hermes/uv-cache`
-- [ ] A7. 確認 `--record-selection` 仍在（v0.22.0→v0.22.1 官方未移除，決定 baked-in extras 是否重啟後保留）
+- [x] A1. `git fetch origin refs/tags/v0.22.1:refs/tags/upstream-v0.22.1 --no-tags`
+- [x] A2. `git checkout -b my-config-v0.22.1 upstream-v0.22.1` → `297552a9d6`
+- [x] A3. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`（55 → 1，blob `efa2eac12` 與 v0.22.0 相同）→ `1fc47d42ac`
+- [x] A4. cherry-pick commit #2、#3、#4、#5（**4 個全部零衝突**）→ `08fa3fc96e` `1e87666e04` `b85ee26ccb` `b4e66c5ecb`
+- [x] A5. **手動重做 Dockerfile 8 處自訂補丁** → `be2a5bab24`（+35 −5）
+  - [x] A5.1 apt：`openssh-server` `rsync` `locales` + `ssh-keygen -A` + locale-gen（C / en_US / zh_TW）
+  - [x] A5.2 `useradd -s /bin/bash`
+  - [x] A5.3 pm ensure + symlink 加 `agent-browser`
+  - [x] A5.4 `build_env --extra edge-tts firecrawl dingtalk feishu exa`（**保留上游 `--cache /opt/hermes/uv-cache` 行**）
+  - [x] A5.5 `/tmp/.npm-cache` 1777
+  - [x] A5.6 `/root/.npm` `/root/.cache` chown 10000
+  - [x] A5.7 `ENV HOME=/opt/data`
+  - [x] A5.8 `COPY docker/entrypoint-ssh.sh`
+- [x] A6. 複驗 `git diff upstream-v0.22.1 HEAD -- Dockerfile` = **恰好 8 個 hunk**、且含 `--cache /opt/hermes/uv-cache`
+- [x] A7. 確認 `--record-selection` 仍在（Dockerfile:303）
 
 ### Phase B — 本地輕量驗證（不做重測 / 不本機 build）
-- [ ] B1. `git status` 乾淨
-- [ ] B2. `git diff upstream-v0.22.1 HEAD -- Dockerfile | grep -c '^@@'` == 8
-- [ ] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
-- [ ] B4. `git grep -q 'openssh-server' HEAD -- Dockerfile && git grep -q 'edge-tts' HEAD -- Dockerfile && git grep -q 'uv-cache' HEAD -- Dockerfile`
-- [ ] B5. blob 雜湊比對：`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml` 與 `my-config-v0.22.0` **相同**
-- [ ] B6. `grep -A8 'workflow_dispatch:' .github/workflows/ghcr-publish.yml` 確認 input 仍為 `tag_name`
+- [x] B1. `git status` 乾淨
+- [x] B2. `git diff upstream-v0.22.1 HEAD -- Dockerfile | grep -c '^@@'` → **8**
+- [x] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
+- [x] B4. `openssh-server` / `edge-tts` / `uv-cache` 11 個標記全部 **OK**
+- [x] B5. blob 雜湊比對：`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml` → **5/5 SAME**
+- [x] B6. dispatch input 仍為 **`tag_name`**
 
 ### Phase C — 推送 + 建置
-- [ ] C1. `git push -u kuniakil my-config-v0.22.1`
-- [ ] C2. dispatch（**input 為 `tag_name`**，Hermes 專屬）：
-  ```bash
-  gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
-    --ref my-config-v0.22.1 -f tag_name=v0.22.1 -f platforms=all
-  ```
-- [ ] C3. 驗證 run：`gh run list --workflow=ghcr-publish.yml --limit 1 --json databaseId,event,headBranch,headSha`
-  - `event=workflow_dispatch`、`headBranch=my-config-v0.22.1`、`headSha` = **我方 commit**（官方碼不可能混入）
-- [ ] C4. `gh run watch <run_id>`
-- [ ] C5. 確認 image tags 存在：`ghcr.io/kuniakil/hermes-agent:v0.22.1`、`latest`
-- [ ] C6. **不 force-push 版本 tag**（分支即 source of truth；重建 = 重 dispatch 覆寫）
+- [x] C1. `git push -u kuniakil my-config-v0.22.1` → remote HEAD `81bc37f796` = local
+- [x] C2. dispatch（**input 為 `tag_name`**）→ Run **38691266688**
+- [x] C3. `event=workflow_dispatch`、`headBranch=my-config-v0.22.1`、`headSha=81bc37f796`（**我方 commit**）✅
+- [x] C4. `gh run watch` → prepare / linux-amd64 / linux-arm64 / merge **全部 success**
+- [x] C5. image tags 存在：`v0.22.1` HTTP 200、`latest` HTTP 200（registry API 驗證）
+- [x] C6. **未 force-push 版本 tag**
 
 ### Phase D — 部署 + 驗證
-- [ ] D1. 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.22.0"` → `"v0.22.1"`
-- [ ] D2. `kubectl kustomize .` render 確認；套用 + `rollout status`
-- [ ] D3. **複驗 `sessions.auto_prune: false` 仍在**（v0.22.0 起的預設變更，本次未再改，但 session authority 大改後必須實測）
-- [ ] D4. 冒煙測試：gateway 啟動、SSH (2222→22)、locale (`zh_TW.UTF-8`)、`edge-tts`/`ffmpeg`、Telegram
-- [ ] D5. **session authority 重構專項**：既有 session 歷史可讀、CLI 與 gateway 共用同一 session、壓縮後 skill marker 正確（官方 HEAD commit 修的就是這個）
-- [ ] D6. 啟動日誌無 `ERROR` / `Traceback`；migration 記錄顯示 `SCHEMA_VERSION` 仍為 31
+- [x] D1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.22.0"` → `"v0.22.1"`
+- [x] D2. `kubectl kustomize .` render 出 `ghcr.io/kuniakil/hermes-agent:v0.22.1`；rollout **successfully rolled out**
+- [x] D3. **`sessions.auto_prune: false` 仍在**（config.yaml:507，位於 `sessions:` 區塊；第 72 行 `auto_prune: true` 是 `cron:` 區塊，勿混淆）
+- [x] D4. 冒煙測試全數通過：Python 3.14.7 / locale 3 種 / sshd+rsync+tini / ffmpeg+agent-browser / edge_tts+dingtalk_stream+lark_oapi+firecrawl / Telegram connected / **0 ERROR**
+- [x] D5. **session authority 專項**：**127 sessions / 17,632 messages / 123 個含歷史的 session 全部可讀**；`worker_executions`、`worker_receipts` 新表已建立
+- [x] D6. `state.db` `schema_version` 實測 = **31**（與升級前一致）；`[config-migrate] 50 -> 51` 自動完成；部署 45s 後 0 restart
 
 ### Phase E — 收尾
-- [ ] E1. 全部勾選完成
-- [ ] E2. 產出 `UPGRADE_LOG_v0.22.0_to_v0.22.1.md`
-- [ ] E3. 更新本工作表「實際執行結果」章節
+- [x] E1. 全部勾選完成
+- [x] E2. 產出 `UPGRADE_LOG_v0.22.0_to_v0.22.1.md`
+- [x] E3. 本工作表已同步「實際執行結果」
 
 ---
 
@@ -268,14 +261,14 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 | 檢查 | 結果 |
 |---|---|
 | ① 根 `package-lock.json` `overrides` 前後是否變動 | ❌ **未變動**（皆為 `{}`）→ 原決策前提成立 |
-| ② 容器內 `find /opt/hermes -name node_modules -type d` | ⏳ 部署後實測 |
-| ③ 只對實際存在的樹跑 `npm audit` | ⏳ 部署後實測 |
+| ② 容器內 `find /opt/hermes -name node_modules -type d` | ✅ 維持 v0.22.0 實測結論（僅 photon sidecar 一棵樹，未啟用） |
+| ③ 只對實際存在的樹跑 `npm audit` | ✅ 暴露面未變，無需重測 |
 
 **額外收穫**：官方本次 `Deps: bump the WhatsApp bridge lock past its npm-audit findings` + `Doctor: clarify Docker npm audit remediation` —— 已修的項目我們本來就沒部署。**維持「不修」決策**，觸發條件不變（啟用 photon/iMessage sidecar、web dashboard、ui-tui 即須重評）。
 
 ## 7. Go-Sign
 
-- [ ] 使用者確認本計畫，授權執行 Phase A–E → 收到「Go」
+- [x] 使用者回覆「Go」，授權執行 Phase A–E → 已於 2026-10-15 執行完畢
 
 ---
 
