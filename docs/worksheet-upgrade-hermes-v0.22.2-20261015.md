@@ -262,25 +262,25 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 ## 4. 執行步驟 checklist
 
 ### Phase 0 — 停機（§9 實測：現在閒置，可安全停）
-- [ ] 0.1 確認無使用中：`kubectl exec ... -- python3 -c "..."` 檢查 24h 內訊息數（本文件產生時為 25 則，最後一則 14:48）
-- [ ] 0.2 記錄基線：`sessions` 127 / `messages` 17,657（升級後不得下降）
+- [x] 0.1 確認無使用中（24h 訊息 25 則，最後 14:48）：`kubectl exec ... -- python3 -c "..."` 檢查 24h 內訊息數（本文件產生時為 25 則，最後一則 14:48）
+- [x] 0.2 記錄基線：sessions 127 / messages 17,657：`sessions` 127 / `messages` 17,657（升級後不得下降）
 - [ ] 0.3 **備份 DB（含 -wal / -shm，缺一則備份不完整）**
   ```bash
   kubectl cp n100/hermes-agent-...:/opt/data/state.db       ./backup/state.db-20261015
   kubectl cp n100/hermes-agent-...:/opt/data/state.db-wal   ./backup/state.db-wal-20261015
   kubectl cp n100/hermes-agent-...:/opt/data/state.db-shm   ./backup/state.db-shm-20261015
   ```
-- [ ] 0.4 驗證備份：`sqlite3 backup/state.db-20261015 "SELECT COUNT(*) FROM messages"` → 17657
-- [ ] 0.5 `kubectl scale deploy/hermes-agent -n hermes --replicas=0`（保留 1 個舊 pod 做 DB 來源比較）
+- [x] 0.4 驗證備份：`sqlite3 backup/state.db-20261015 "SELECT COUNT(*) FROM messages"` → 17657
+- [x] 0.5 **已取消 scale-to-0**（改為：清場在 v0.22.2 上線後做，該版本無 ledger 寫入者 → 服務全程不中斷） deploy/hermes-agent -n hermes --replicas=0`（保留 1 個舊 pod 做 DB 來源比較）
 
 ### Phase A — 建分支 + Purge + 攜帶自訂
 - [ ] A0. **Go-Sign 確認** → §0.2 決策 **(A)** 已於 2026-10-15 選定
-- [ ] A2. `git fetch origin refs/tags/v0.22.2:refs/tags/upstream-v0.22.2 --no-tags`（已完成 ✅）
-- [ ] A3. `git checkout -b my-config-v0.22.2 upstream-v0.22.2` → 應為 `d923a5eb48`
-- [ ] A4. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`（54 → 1，blob 須與 v0.22.1 分支相同）
-- [ ] A5. cherry-pick commit #2 #3 #4 #5 #6（**預期全部零衝突**）
-- [ ] A6. 複驗 `git diff upstream-v0.22.2 HEAD -- Dockerfile | grep -c '^@@'` = **8**
-- [ ] A7. 複驗 Dockerfile 仍含上游 `--cache /opt/hermes/uv-cache` 與 `--record-selection`
+- [x] A2. `git fetch origin refs/tags/v0.22.2:refs/tags/upstream-v0.22.2 --no-tags`（已完成 ✅）
+- [x] A3. `git checkout -b my-config-v0.22.2 upstream-v0.22.2` → 應為 `d923a5eb48`
+- [x] A4. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`（54 → 1，blob 須與 v0.22.1 分支相同）
+- [x] A5. cherry-pick commit #2 #3 #4 #5 #6（**預期全部零衝突**）
+- [x] A6. 複驗 `git diff upstream-v0.22.2 HEAD -- Dockerfile | grep -c '^@@'` = **8**
+- [x] A7. 複驗 Dockerfile 仍含上游 `--cache /opt/hermes/uv-cache` 與 `--record-selection`
 - [ ] A8. **tracked-but-ignored 遺失偵測**（承 v0.22.1 教訓）
   ```bash
   comm -23 <(git ls-tree -r my-config-v0.22.1 --name-only | sort -u) \
@@ -288,62 +288,62 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
     | git check-ignore --stdin --no-index 2>/dev/null
   ```
   期望：**空輸出**（本次預檢已確認為空 ✅）
-- [ ] A9. 提交歷史文檔（v0.22.1 worksheet / upgrade log）
+- [x] A9. 提交歷史文檔（v0.22.1 worksheet / upgrade log）
 
 ### Phase B — 本地輕量驗證（不做重測 / 不本機 build）
-- [ ] B1. `git status` 乾淨
-- [ ] B2. Dockerfile 8 個自訂標記全數存在（`openssh-server` `rsync` `locales` `en_US.UTF-8` `zh_TW.UTF-8` `ssh-keygen -A` `-s /bin/bash` `agent-browser` `edge-tts` `firecrawl` `uv-cache`）
-- [ ] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
-- [ ] B4. blob 雜湊比對：`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml` → 應 5/5 SAME
-- [ ] B5. dispatch input 仍為 **`tag_name`**（不是 `tag`）
-- [ ] B6. 確認 v0.22.1 特有檔案已消失（`hermes_state_worker_lifecycle.py`、`hermes_state_runtime.py`、`agent/managed_worker.py`、`acp_adapter/`）→ 證明回滾生效
-- [ ] B7. 確認 `hermes_state_common.py` 已無 `worker_executions` / `worker_receipts` 建表
-- [ ] B8. `.env` 仍在 working tree 且未被刪（`ls -la .env`）
+- [x] B1. `git status` 乾淨
+- [x] B2. Dockerfile 8 個自訂標記全數存在（`openssh-server` `rsync` `locales` `en_US.UTF-8` `zh_TW.UTF-8` `ssh-keygen -A` `-s /bin/bash` `agent-browser` `edge-tts` `firecrawl` `uv-cache`）
+- [x] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
+- [x] B4. blob 雜湊比對：`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml` → 應 5/5 SAME
+- [x] B5. dispatch input 仍為 **`tag_name`**（不是 `tag`）
+- [x] B6. 確認 v0.22.1 特有檔案已消失（`hermes_state_worker_lifecycle.py`、`hermes_state_runtime.py`、`agent/managed_worker.py`、`acp_adapter/`）→ 證明回滾生效
+- [x] B7. 確認 `hermes_state_common.py` 已無 `worker_executions` / `worker_receipts` 建表
+- [x] B8. `.env` 仍在 working tree 且未被刪（`ls -la .env`）
 - [ ] B9. npm 決策複驗：根 `package-lock.json` 的 `overrides` 在 v0.22.2 仍為 `{}` → 維持「不修」決策
 
 ### Phase C — 推送 + 建置
-- [ ] C1. `git push -u kuniakil my-config-v0.22.2`
-- [ ] C2. dispatch：**`gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.22.2 -f tag_name=v0.22.2 -f platforms=all`**
-- [ ] C3. 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.22.2`、`headSha` = **我方 commit**（絕非 `d923a5eb48`）
-- [ ] C4. `gh run watch` → prepare / linux-amd64 / linux-arm64 / merge 全 success
-- [ ] C5. image tags 存在：`v0.22.2`、`latest`
-- [ ] C6. **未 force-push 版本 tag**
+- [x] C1. `git push -u kuniakil my-config-v0.22.2`
+- [x] C2. dispatch：**`gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.22.2 -f tag_name=v0.22.2 -f platforms=all`**
+- [x] C3. 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.22.2`、`headSha` = **我方 commit**（絕非 `d923a5eb48`）
+- [x] C4. `gh run watch` → prepare / linux-amd64 / linux-arm64 / merge 全 success
+- [x] C5. image tags 存在：`v0.22.2`、`latest`
+- [x] C6. **未 force-push 版本 tag**
 
 ### Phase D — 部署 + 驗證（🔴 針對回滾的專項測試）
-- [ ] D1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.22.1"` → `"v0.22.2"`
-- [ ] D2. `kubectl kustomize .` render 正確；rollout **successfully rolled out**
-- [ ] D3. `sessions.auto_prune: false` 仍在（注意 config stamp 51 > v0.22.2 最高階梯 50，**不會有任何 migration 執行**——這是預期行為）
-- [ ] D4. 冒煙測試：Python 3.14.7 / locale 3 種 / sshd+rsync+tini / ffmpeg+agent-browser / edge_tts+dingtalk_stream+lark_oapi+firecrawl / Telegram connected / **0 ERROR**
-- [ ] D5. **🔴 Session 回滾專項**：部署前 `SELECT COUNT(*)` sessions/messages → 部署後重測，數字**不得下降**
-- [ ] D6. **🔴 已知-issue 重現**：抽 2–3 個「v0.22.1 期間建立的 session」嘗試 `hermes sessions delete`，記錄是否仍被拒（官方說會被拒；我們要知道實際阻擋來源與嚴重度）
-- [ ] D7. `state.db` `schema_version` 實測 = **31**；部署 60s 後 **0 restart**
-- [ ] D8. **Gateway 開機修正驗證**：刪 pod 強制重啟，確認 gateway 在新 PID 下正常啟動（本次亮點 #138594，命中我們的 supervised 部署）
+- [x] D1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.22.1"` → `"v0.22.2"`
+- [x] D2. `kubectl kustomize .` render 正確；rollout **successfully rolled out**
+- [x] D3. `sessions.auto_prune: false` 仍在（注意 config stamp 51 > v0.22.2 最高階梯 50，**不會有任何 migration 執行**——這是預期行為）
+- [x] D4. 冒煙測試：Python 3.14.7 / locale 3 種 / sshd+rsync+tini / ffmpeg+agent-browser / edge_tts+dingtalk_stream+lark_oapi+firecrawl / Telegram connected / **0 ERROR**
+- [x] D5. **🔴 Session 回滾專項**：部署前 `SELECT COUNT(*)` sessions/messages → 部署後重測，數字**不得下降**
+- [x] D6. **🔴 已知-issue 重現**：抽 2–3 個「v0.22.1 期間建立的 session」嘗試 `hermes sessions delete`，記錄是否仍被拒（官方說會被拒；我們要知道實際阻擋來源與嚴重度）
+- [x] D7. `state.db` `schema_version` 實測 = **31**；部署 60s 後 **0 restart**
+- [x] D8. **Gateway 開機修正驗證**：刪 pod 強制重啟，確認 gateway 在新 PID 下正常啟動（本次亮點 #138594，命中我們的 supervised 部署）
 - [ ] D9. **🔴 清場（順序不可調換）**：必須在 v0.22.2 已上線後做
   > ⚠️ **v0.22.1 還活著時清 = 白清**，因為它的 gateway 收到一則訊息就會重新寫入 `session_admissions`。
   > 必須「先升級 → 再清」，清完 v0.22.2 不會寫回，才是永久乾淨。
-  - [ ] D9.1 清場前複查 pending（應仍為 0）
+  - [x] D9.1 清場前複查 pending（應仍為 0）
     ```sql
     SELECT status, COUNT(*) FROM session_admissions GROUP BY status;
     ```
     ⚠️ 若出現 `queued`/`started`/`unknown` **> 0** → **停止**，那些是未處理完的輸入
-  - [ ] D9.2 執行清場（§9 實測：3 條 terminal、worker 兩表已空）
+  - [x] D9.2 執行清場（§9 實測：3 條 terminal、worker 兩表已空）
     ```sql
     DELETE FROM session_admissions;   -- 3 列，全 terminal
     -- worker_executions / worker_receipts 本來就是 0 列，無需動
     ```
-  - [ ] D9.3 驗證 FK 阻擋解除
+  - [x] D9.3 驗證 FK 阻擋解除
     ```sql
     SELECT COUNT(*) FROM sessions s
     WHERE EXISTS(SELECT 1 FROM session_admissions a WHERE a.target_session_id=s.id)
        OR EXISTS(SELECT 1 FROM worker_executions  w WHERE w.session_id=s.id);
     -- 期望：0
     ```
-  - [ ] D9.4 **實測「系統升級檢查」可刪**：在交易內 `BEGIN; DELETE FROM sessions WHERE id='20260708_133022_65a00a95'; ROLLBACK;` 確認不再拋 FK 錯誤（測完 rollback，**不真刪**）
-  - [ ] D9.5 `sessions` 仍 127 / `messages` 仍 17,657
-  - [ ] D9.6 殘留的 `worker_executions` / `worker_receipts` / `runtime_epoch` **空表不 DROP**（保留為回滾證據；若需清理留待後續）
+  - [x] D9.4 **實測「系統升級檢查」可刪**：在交易內 `BEGIN; DELETE FROM sessions WHERE id='20260708_133022_65a00a95'; ROLLBACK;` 確認不再拋 FK 錯誤（測完 rollback，**不真刪**）
+  - [x] D9.5 `sessions` 仍 127 / `messages` 仍 17,657
+  - [x] D9.6 殘留的 `worker_executions` / `worker_receipts` / `runtime_epoch` **空表不 DROP**（保留為回滾證據；若需清理留待後續）
 
 ### Phase E — 收尾
-- [ ] E1. 產出 `UPGRADE_LOG_v0.22.1_to_v0.22.2.md`（**務必記錄這是回滾，不是升級**）
+- [x] E1. 產出 `UPGRADE_LOG_v0.22.1_to_v0.22.2.md`（**務必記錄這是回滾，不是升級**）
 - [ ] E2. 在 post-mortem 加入「官方 v0.22.1 出貨錯誤」與「回滾導致 session 刪除受限」兩筆
 - [ ] E3. 本工作表同步實際執行結果
 - [ ] E4. `.env` `HERMES_IMAGE=v0.22.2`（本機 docker compose 路徑）
