@@ -1,11 +1,15 @@
 # Hermes Agent 升級工作表：v0.22.1 → v0.22.2
 
 - **目標版本**：`v0.22.2`（commit `d923a5eb48`，2026-10-15 發佈）
-- **當前版本**：`my-config-v0.22.1`（HEAD `27c377fdb4`，基於官方 `v0.22.1` = `297552a9d6`）
+- **升級前版本**：`my-config-v0.22.1`（HEAD `27c377fdb4`，基於官方 `v0.22.1` = `297552a9d6`）
 - **新分支**：`my-config-v0.22.2`
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork（⚠️ 兩者名稱與 OpenClaw 相反）
 - **發布模型**：`my-config-v0.22.2` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.22.2`
-- **狀態**：⏸ **計畫中，等待 Go-Sign**（§9 已完成 n100 實地勘查，風險由 🔴 降為 🟢）
+- **狀態**：✅ **已完成升級並部署**（2026-10-15）
+- **最終 HEAD**：`26575c8a21`
+- **GHCR digest**：`sha256:7da703c77cba55ff337dc1c374fc780c1414b6a457de21e08f0b7fd33546debc`
+- **GH Actions Run**：`38729951089`（prepare / linux-amd64 / linux-arm64 / merge 全部 success）
+- **清場**：FK 阻擋 **1 → 0**；messages **17,657 → 17,657 不變**
 - **日期**：2026-10-15
 
 ---
@@ -255,7 +259,7 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 
 ### 3.3 上游 AGENTS.md 是否有新規則需合併
 
-- [ ] 執行時檢查：`git diff upstream-v0.22.1 upstream-v0.22.2 -- AGENTS.md` 是否為零；若非零，確認我們的 Mac host 保護區塊仍在。
+- [x] §3.3 檢查完畢：`git diff upstream-v0.22.1 upstream-v0.22.2 -- AGENTS.md` **零 diff**；我們的 Mac host 保護區塊保留（`git grep -c 'Local Resource Constraint' = 1`）
 
 ---
 
@@ -264,7 +268,7 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 ### Phase 0 — 停機（§9 實測：現在閒置，可安全停）
 - [x] 0.1 確認無使用中（24h 訊息 25 則，最後 14:48）：`kubectl exec ... -- python3 -c "..."` 檢查 24h 內訊息數（本文件產生時為 25 則，最後一則 14:48）
 - [x] 0.2 記錄基線：sessions 127 / messages 17,657：`sessions` 127 / `messages` 17,657（升級後不得下降）
-- [ ] 0.3 **備份 DB（含 -wal / -shm，缺一則備份不完整）**
+- [x] 0.3 **備份 DB（含 -wal / -shm，缺一則備份不完整）**
   ```bash
   kubectl cp n100/hermes-agent-...:/opt/data/state.db       ./backup/state.db-20261015
   kubectl cp n100/hermes-agent-...:/opt/data/state.db-wal   ./backup/state.db-wal-20261015
@@ -274,14 +278,14 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 - [x] 0.5 **已取消 scale-to-0**（改為：清場在 v0.22.2 上線後做，該版本無 ledger 寫入者 → 服務全程不中斷） deploy/hermes-agent -n hermes --replicas=0`（保留 1 個舊 pod 做 DB 來源比較）
 
 ### Phase A — 建分支 + Purge + 攜帶自訂
-- [ ] A0. **Go-Sign 確認** → §0.2 決策 **(A)** 已於 2026-10-15 選定
+- [x] A0. **Go-Sign 確認** → §0.2 決策 **(A)** 已於 2026-10-15 選定
 - [x] A2. `git fetch origin refs/tags/v0.22.2:refs/tags/upstream-v0.22.2 --no-tags`（已完成 ✅）
 - [x] A3. `git checkout -b my-config-v0.22.2 upstream-v0.22.2` → 應為 `d923a5eb48`
 - [x] A4. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`（54 → 1，blob 須與 v0.22.1 分支相同）
 - [x] A5. cherry-pick commit #2 #3 #4 #5 #6（**預期全部零衝突**）
 - [x] A6. 複驗 `git diff upstream-v0.22.2 HEAD -- Dockerfile | grep -c '^@@'` = **8**
 - [x] A7. 複驗 Dockerfile 仍含上游 `--cache /opt/hermes/uv-cache` 與 `--record-selection`
-- [ ] A8. **tracked-but-ignored 遺失偵測**（承 v0.22.1 教訓）
+- [x] A8. **tracked-but-ignored 遺失偵測**（承 v0.22.1 教訓）
   ```bash
   comm -23 <(git ls-tree -r my-config-v0.22.1 --name-only | sort -u) \
            <(git ls-tree -r my-config-v0.22.2 --name-only | sort -u) \
@@ -299,7 +303,7 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 - [x] B6. 確認 v0.22.1 特有檔案已消失（`hermes_state_worker_lifecycle.py`、`hermes_state_runtime.py`、`agent/managed_worker.py`、`acp_adapter/`）→ 證明回滾生效
 - [x] B7. 確認 `hermes_state_common.py` 已無 `worker_executions` / `worker_receipts` 建表
 - [x] B8. `.env` 仍在 working tree 且未被刪（`ls -la .env`）
-- [ ] B9. npm 決策複驗：根 `package-lock.json` 的 `overrides` 在 v0.22.2 仍為 `{}` → 維持「不修」決策
+- [x] B9. npm 決策複驗（兩版 `overrides` 皆為 `(none)` → 維持「不修」決策）：根 `package-lock.json` 的 `overrides` 在 v0.22.2 仍為 `{}` → 維持「不修」決策
 
 ### Phase C — 推送 + 建置
 - [x] C1. `git push -u kuniakil my-config-v0.22.2`
@@ -318,7 +322,7 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 - [x] D6. **🔴 已知-issue 重現**：抽 2–3 個「v0.22.1 期間建立的 session」嘗試 `hermes sessions delete`，記錄是否仍被拒（官方說會被拒；我們要知道實際阻擋來源與嚴重度）
 - [x] D7. `state.db` `schema_version` 實測 = **31**；部署 60s 後 **0 restart**
 - [x] D8. **Gateway 開機修正驗證**：刪 pod 強制重啟，確認 gateway 在新 PID 下正常啟動（本次亮點 #138594，命中我們的 supervised 部署）
-- [ ] D9. **🔴 清場（順序不可調換）**：必須在 v0.22.2 已上線後做
+- [x] D9. **🔴 清場（已在 v0.22.2 上線後執行）**：必須在 v0.22.2 已上線後做
   > ⚠️ **v0.22.1 還活著時清 = 白清**，因為它的 gateway 收到一則訊息就會重新寫入 `session_admissions`。
   > 必須「先升級 → 再清」，清完 v0.22.2 不會寫回，才是永久乾淨。
   - [x] D9.1 清場前複查 pending（應仍為 0）
@@ -344,9 +348,9 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 
 ### Phase E — 收尾
 - [x] E1. 產出 `UPGRADE_LOG_v0.22.1_to_v0.22.2.md`（**務必記錄這是回滾，不是升級**）
-- [ ] E2. 在 post-mortem 加入「官方 v0.22.1 出貨錯誤」與「回滾導致 session 刪除受限」兩筆
-- [ ] E3. 本工作表同步實際執行結果
-- [ ] E4. `.env` `HERMES_IMAGE=v0.22.2`（本機 docker compose 路徑）
+- [x] E2. 在 post-mortem 加入「官方 v0.22.1 出貨錯誤」與「回滾導致 session 刪除受限」兩筆
+- [x] E3. 本工作表同步實際執行結果
+- [x] E4. `.env` `HERMES_IMAGE` — k8s 走 `newTag` 不受影響；本機 docker compose 尚未使用
 
 ---
 
@@ -393,7 +397,7 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
 ## 8. Go-Sign
 
 - [x] 使用者選定 §0.2 決策 **(A) 照升 v0.22.2**（2026-10-15）
-- [ ] 使用者回覆「Go」授權執行 Phase 0 → A → B → C → D → E
+- [x] 使用者回覆「Go」並選定 **(A)**，Phase 0 → A → B → C → D → E 全部執行完畢（2026-10-15）
 
 ---
 
