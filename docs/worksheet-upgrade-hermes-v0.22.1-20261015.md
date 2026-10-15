@@ -191,9 +191,15 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 | 4 | `8648243390` | `chore`:Mac host 資源限制規則 → AGENTS.md | ✅ |
 | 5 | `9c0eebd450` | `fix(docker)`:stage2 SSH 設定 + npm cache | ✅ |
 | 6 | `4f88c09175` | `feat(docker)`:re-port custom layer（8 處補丁） | 🔴 **手動重做**（見 §2.3） |
-| 7 | `13481ae63a` | `chore`:bump HERMES_IMAGE → v0.21.7 | ⏭ 跳過（改由 §5 處理） |
+| 7 | `13481ae63a` | `chore`:bump HERMES_IMAGE → v0.21.7（**修改 `.env`**） | ❌ **誤判為跳過** |
 | 8 | `42a144db61` | `docs`:v0.21.7 升級紀錄 + 工作表 | ✅（歷史文檔） |
-| 9 | `0bd6084e8d`、`ab0fd082b1`、`c0888ada33`、`8b28a5d1a5`、`b6ca87c8d0`、`f3a9343213` | `docs`:v0.22.0 驗證/紀錄/npm 附錄 + bump tag | ✅（歷史文檔；bump tag 併入 §5） |
+| 9 | `0bd6084e8d`、`ab0fd082b1`、`c0888ada33`、`8b28a5d1a5` | `docs`:v0.22.0 驗證/紀錄 | ✅（歷史文檔） |
+| 9b | `b6ca87c8d0` | `chore`:bump HERMES_IMAGE → v0.22.0（**修改 `.env`**） | ❌ **誤歸類為 docs** |
+| 9c | `f3a9343213` | `docs`:npm 漏洞附錄 | ✅（歷史文檔） |
+
+> 🔴 **執行後修正**：#7 與 #9b **兩個 commit 修改的都是 `.env`**（非 docs）。當時把 #9b 誤歸類為「docs 歷史文檔」而標記為「⏭ 跳過（改由 §5 處理）」，導致 **`.env` 未被帶入 `my-config-v0.22.1`**。
+> 因 `.env` 在 `my-config-v0.22.0` 是**被 git 追蹤**的，`git checkout -b ... upstream-v0.22.1` 時 git 直接將其**從 working tree 刪除**。
+> 影響僅限本機 `docker compose` 路徑（k8s 走 overlay `newTag`，不受影響）。修復方式見 `UPGRADE_LOG_v0.22.0_to_v0.22.1.md` §6.1。
 
 ---
 

@@ -172,12 +172,40 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
 
 ## 6. 遺留事項
 
-### 6.1 待使用者手動處理
+### 6.1 ⚠️ 升級遺漏（已發現，需使用者手動修復）
 
-- [ ] `.env` 的 `HERMES_IMAGE` → `ghcr.io/kuniakil/hermes-agent:v0.22.1`
-      （該檔受 `**/*.env` 讀取防護，agent 無法代改；僅影響本機 `docker compose` 路徑，k8s 走 overlay `newTag`，已完成）
+- [ ] **`.env` 未被帶入 `my-config-v0.22.1`**
 
-### 6.2 歷史遺留（本次未觸及）
+  **成因（本次作業的疏失）**：工作表 §3 的 commit 對照表把 `b6ca87c8d0`（`chore: bump HERMES_IMAGE tag to v0.22.0`）誤歸類為「docs 歷史文檔」commit，但實際上**該 commit 修改的就是 `.env`**。它被標記為「⏭ 跳過（改由 §5 處理）」，而 §5 從未實際套用 → `.env` 未被帶入新分支。
+
+  **機制**：`.env` 在 `my-config-v0.22.0` 是**被 git 追蹤的**（`.gitignore` 第 17 行雖然列出它，但歷史中被 force-add 過）。因此 `git checkout -b my-config-v0.22.1 upstream-v0.22.1` 時，git 看到該檔在當前分支「被追蹤」而在目標分支「不存在」→ **直接從 working tree 刪除**，不是單純停止追蹤。
+
+  **追蹤歷史**：`4a5d31131a`(2026-10-10, v0.21.6) 首次加入 → 追蹤於 `my-config-v0.21.7` / `my-config-v0.22.0` → **於 `my-config-v0.22.1` 遺失**
+
+  **影響範圍**：
+  - ❌ **不影響 k8s 部署**（已 rollout 至 `v0.22.1`，走 overlay `newTag`）
+  - ⚠️ **影響本機 `docker compose` 路徑**（`docker-compose.yml` 使用 `image: ${HERMES_IMAGE}`）
+
+  **修復指令**（需使用者執行，因 `**/*.env` 受讀寫防護）：
+  ```bash
+  cd ~/hermes
+  git checkout my-config-v0.22.0 -- .env    # 還原
+  # 再手動把 HERMES_IMAGE 改成 v0.22.1：
+  #   HERMES_IMAGE=ghcr.io/kuniakil/hermes-agent:v0.22.1
+  git add -f .env && git commit -m "chore: bump HERMES_IMAGE tag to v0.22.1"
+  git push kuniakil my-config-v0.22.1
+  ```
+  （需 `git add -f` 因 `.gitignore:17` 已列出 `.env`。）
+
+### 6.2 ⚠️ 安全事項：`.env` 被追蹤在 **PUBLIC** repo
+
+`kuniakil/hermes-agent` 為 **PUBLIC** 倉庫（`gh repo view` → `isPrivate: false`）。`.env` 自 2026-10-10 起被 git 追蹤並已推送，**其中任何 secrets（API key / token）對外公開可讀**。
+
+- 建議確認該檔內除 `HERMES_IMAGE` 外**是否含真實憑證**；若有，應立即輪替（rotate）並改用 `hermes` 的 secrets 管理或 K8s Secret。
+- k8s 部署實際使用 `secret/secrets-env`，推測真實憑證走 K8s Secret 而非此檔 —— **待確認**。
+- 長期建議：`git rm --cached .env`（僅停止追蹤，保留本機檔案），憑證一律走 `.env` 本機檔 + secrets 機制。
+
+### 6.3 其他遺留事項
 
 - [ ] `overlays/mac/kustomization.yaml` 仍停在 `v2026.8.3`
 
