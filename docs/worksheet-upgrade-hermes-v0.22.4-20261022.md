@@ -8,7 +8,7 @@
 - **發布模型**：`my-config-v0.22.4` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.22.4`
 - **目前上線版本**：`v0.22.2`（K3s n100，pod `hermes-agent-c84ddfc-lvjm8`，0 restarts）
 - **狀態**：✅ **已完成升級並部署**（2026-10-22）
-- **最終 HEAD**：`b510b398a9`
+- **最終 HEAD**：本分支最新 commit（升級紀錄 commit；`git log -1 my-config-v0.22.4`）
 - **GHCR digest**：`sha256:079618425a6ded8c63b7733c8bf848087eeb3eb4efe5120be5e7547c88b25d1c`
 - **GH Actions Run**：`39733973873`（prepare / linux-amd64 / linux-arm64 / merge 全部 success）
 - **資料完整性**：sessions 127 / messages 17,671（升級前後一致，integrity ok）
