@@ -10,6 +10,7 @@
 - **GH Actions Run**：**39733973873**（prepare / linux-amd64 / linux-arm64 / merge 全部 success）
 - **部署**：n100 / K3s，`newTag: v0.22.4`，rollout successfully rolled out，**0 restarts**（強制刪 pod 重啟後仍 0）
 - **備份**：`~/backups/hermes-20261022/state.db`（175,075,328 bytes，`PRAGMA integrity_check = ok`）
+  - ⚠️ 這是**升級前**的快照（`schema_version = 31`、ledger 為空、messages 17,671），**正是回滾到 v0.22.2 image 所需的正確產物**
 - **工作表**：`docs/worksheet-upgrade-hermes-v0.22.4-20261022.md`
 
 ---
@@ -207,9 +208,24 @@ state_meta.fts_storage_version      = （仍不存在）
 
 ## 10. 復原（回滾）程序
 
-若升級後必須退回 v0.22.2 image：
+### 10.1 備份盤點（2026-10-22 全機掃描結果）
+
+| 路徑 | 來源 | schema | sessions | messages | `session_admissions` | integrity | 用途 |
+|---|---|---|---|---|---|---|---|
+| `~/backups/hermes-20261022/state.db` | **本次升級前快照**（2026-10-22 14:12） | **31** | 127 | **17,671** | **0** | ok | ✅ **回滾 v0.22.2 image 的正確產物**（升級前狀態、ledger 空） |
+| `~/kubernetes/hermes/backups/20261015/state.db` | **上次升級（v0.22.1→v0.22.2）殘留**，2026-10-15 19:47 | 31 | 127 | 17,657 | **3** | ok | ⚠️ v0.22.1 殘留 ledger（清場前）；**帶它回滾會讓「session 刪不掉」限制復發** |
+| `~/kubernetes/hermes/backups/` | 被 `~/kubernetes/.gitignore` 的 `backups/` 規則排除 | — | — | — | — | — | 未進 git ✅ |
+| `/opt/data/backups/config/`（pod 內） | 2026-10-15 的 **config** 備份（184K） | — | — | — | — | — | 非 DB 備份 |
+| `/opt/data/.curator_backups/blobs`（pod 內） | skills curator 備份 | — | — | — | — | — | 非 DB 備份 |
+| `~/hermes/data/state.db` | **本機開發用 live DB**（非備份） | — | — | — | — | — | — |
+| n100 主機 `/data/services/hermes/` | — | — | — | — | — | — | **無任何 DB 備份**（SSH 使用者無權限讀寫該目錄，歷次升級皆走 `kubectl exec -- cat`） |
+
+> **兩個 DB 備份不可互換**：schema 相同但 ledger 狀態不同。本次備份（ledger 空）才是能配 v0.22.2 image 的那份。
+
+### 10.2 回滾步驟（若必須退回 v0.22.2 image）
 
 1. `kubectl apply -k ~/kubernetes/hermes/overlays/n100`（把 `newTag` 改回 `v0.22.2`）；
-2. **必須同時用備份 DB 還原** `/opt/data/state.db`（否則帶 ledger 歷史的 session 會被
-   `sessions_runtime_ledger_delete_guard` 阻擋而刪不掉）；
+2. **必須同時用備份 DB 還原** `/opt/data/state.db`（用 `~/backups/hermes-20261022/state.db`，**不要**用 20261015 那份）：
+   否則帶 ledger 歷史的 session 會被 `sessions_runtime_ledger_delete_guard` 阻擋而刪不掉
+   （v0.22.4 已在 `session_admissions` 寫入新列）；
 3. 官方文件建議的正規路徑是 `hermes update --backup` + `/snapshot restore <id>` 或 `hermes import <backup.zip>`。
