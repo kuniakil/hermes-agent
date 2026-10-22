@@ -275,6 +275,10 @@ Dockerfile / docker/ / docker-compose.yml / AGENTS.md / .env.example：零重疊
   kubectl cp n100/hermes-agent-...:/opt/data/state.db-shm   ./backup/state.db-shm-20261015
   ```
 - [x] 0.4 驗證備份：`sqlite3 backup/state.db-20261015 "SELECT COUNT(*) FROM messages"` → 17657
+- [x] 0.4b 🗑️ **狀態更新 (2026-10-22)：本工作表產生的備份已刪除**
+  - 落地路徑：`~/kubernetes/hermes/backups/20261015/state.db`（+ wal/shm，177 MB）→ **已於 2026-10-22 15:25 刪除**
+  - 刪除理由：這是**清場之前**的快照（帶 3 列 v0.22.1 殘留 `session_admissions` ledger），拿它回滾 v0.22.2 會讓「session 刪不掉」復發 → 不是合格回滾產物；且已被 v0.22.4 升級前的新備份取代
+  - 保留中的備份：`~/backups/hermes-20261022/state.db`（保留至 **2026-10-25**）→ 詳見 `UPGRADE_LOG_v0.22.2_to_v0.22.4.md` §8
 - [x] 0.5 **已取消 scale-to-0**（改為：清場在 v0.22.2 上線後做，該版本無 ledger 寫入者 → 服務全程不中斷） deploy/hermes-agent -n hermes --replicas=0`（保留 1 個舊 pod 做 DB 來源比較）
 
 ### Phase A — 建分支 + Purge + 攜帶自訂
