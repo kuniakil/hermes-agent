@@ -229,3 +229,57 @@ state_meta.fts_storage_version      = （仍不存在）
    否則帶 ledger 歷史的 session 會被 `sessions_runtime_ledger_delete_guard` 阻擋而刪不掉
    （v0.22.4 已在 `session_admissions` 寫入新列）；
 3. 官方文件建議的正規路徑是 `hermes update --backup` + `/snapshot restore <id>` 或 `hermes import <backup.zip>`。
+
+---
+
+## 11. 升級後複查（2026-10-22 15:20，逐項獨立驗證）
+
+由 Hermes Agent 自行做了一次全面檢查，逐項覆核結果如下（**以程式碼與 DB 實測為準**）。
+
+### 11.1 覆核通過（獨立實測一致）
+
+| 項目 | 報告值 | 實測值 | 判定 |
+|---|---|---|---|
+| 版本 | v0.22.4 (upstream 621915ab) | 同 | ✅ |
+| `sessions` | 127 | 127 | ✅ |
+| `messages` | 17,678 | **17,686**（持續增加） | ✅ |
+| `integrity_check` | ok | ok | ✅ |
+| `messages_fts` | = messages | **17,686 = 17,686** | ✅ |
+| `messages_fts_trigram` | 未檢 | **17,686 = 17,686** | ✅ |
+| triggers | 13（messages 12 + sessions 1） | **完全一致** | ✅ |
+| `worker_executions` / `worker_receipts` | 0 / 0 | 0 / 0 | ✅ |
+| config | v51 | 51 | ✅ |
+| `state.db` 大小 | — | 175.1 MB（與升級前持平） | ✅ |
+| cron jobs | 無 | 無 | ✅ |
+| npm audit | 24（2c/5h/9m/8l） | **24（2 critical / 5 high / 9 moderate / 8 low）完全一致** | ✅ 決策不變 |
+
+### 11.2 需要修正的三點
+
+1. **「Uptime 17 天 15 小時」是 host（n100）的 uptime，不是 pod**。pod 起於 2026-10-22 14:57:23 CST（本次升級驗 gateway 開機時主動刪除重建），檢查時僅 ~21 分鐘，**0 restarts**。不可引用為「新版已穩定運行」的證據。
+2. **「今日 6 個 ERROR」的時間歸屬**：嚴格以 ERROR level 切分 → **部署前（<14:31，舊 v0.22.2 pod）5 筆**（06:14 ×2 Telegram adapter rebuild、09:11:48、09:12:09、09:12:39）、**部署後（≥14:57，新 pod）僅 1 筆**（15:05:50 MiniMax 529 overloaded_error）。報告中的 09:11/09:12 在 `gateway.log` 是 WARNING、在 telegram.ext 自己的 logger 才是 ERROR（同一事件、不同檔案、不同 level）。**「非本地邏輯錯誤」的判斷方向正確，但應改述為「升級後只有 1 筆 ERROR，且是上游 529」。**
+3. **「v0.22.4 改了 session_admissions 的 schema，跟 v0.22.1 結構不同」→ 事實錯誤**：v0.22.1（`297552a9d6`）與 v0.22.4 的 `session_admissions` DDL **逐字相同**（欄位一直是 `target_session_id`，從無 `session_id`）。報告中的 `no such column: session_id` 是查詢用錯欄位名，不是 schema 差異。結論（新 runtime 寫入）仍成立，理由不成立。
+
+### 11.3 已被證偽的擔心：「session_admissions 又有 1 筆 → 下次刪 session 可能又被擋」
+
+**不會發生。程式碼與實測雙重證據：**
+
+* **程式碼**：`retire_sessions()` → `retire_terminal_receipts()` 在刪 session **之前**執行
+  `DELETE FROM session_admissions WHERE target_session_id=?` 與 `DELETE FROM worker_executions WHERE session_id=?`。
+  所有刪除路徑都走它：`delete_in_transaction`（`hermes sessions delete`）、`prune_sessions`、
+  `prune_empty_ghost_sessions`、auto-prune（→ `retire_prunable` → `retire_sessions`）。
+  `sessions_runtime_ledger_delete_guard` 只在 ledger 列仍存在時 abort —— 那只發生在**降級到 v0.22.2 或更舊**。
+* **實測**：升級當天即建立一個帶 1 筆 terminal admission 的 session 並 `hermes sessions delete --yes` 成功，
+  `session_admissions` 1→0、`sessions` 128→127、`messages` 回到 17,671、`integrity_check: ok`，
+  `state_meta` 留下 `gateway.retired_session.v1.local-6c0ff…` 標記（證明完整柵欄有發布）。
+* 現存那 1 筆：`target_session_id=20260708_133022_65a00a95`、**status=terminal / outcome=completed**、
+  intent=queue、principal=telegram、seq=5 → 屬可正常 retire 的完成態 admission，**不是阻塞態**。
+* 邊界情況：session 有未完成工作（admission status = queued/started/unknown）時，explicit delete 拋
+  `session_busy`（人話錯誤）、prune 直接跳過該 session —— 都不是「無提示被擋」。
+
+→ **不需要再清 ledger，也不需要「下次觀察」。**
+
+### 11.4 非問題、但列入長期觀察
+
+`state_meta` 的 `gateway.*` key 現有 8 個（5 個 `admission.result` 快取 + `retired_session` 標記 +
+`terminal_admission` / `terminal_identity` 標記）。v0.22.4 會持續寫 admission 快取；
+目前 `state.db` 175.1MB 與升級前持平，官方有 housekeeping 老化標記 → 長期只需確認 DB 不異常膨脹。
