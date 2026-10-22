@@ -91,6 +91,10 @@ FK 阻擋的 session  : 1 / 127  ← 只有「系統升級檢查」(20260708_133
 
 1. `sqlite3` online backup API 產生單一一致檔案 → `integrity_check = ok` → 拉回本機
    - `~/kubernetes/hermes/backups/20261015/state.db`（175,075,328 bytes, sha256 `3826940bff2bcf811eb3a3911c4f3406…`）
+   - 🗑️ **狀態更新 (2026-10-22)：此備份已刪除**（v0.22.4 升級收工時清理）
+     - 刪除理由：① 這是**清場之前**的快照，帶著 **3 列 v0.22.1 殘留 `session_admissions` ledger** —— 拿它回滾 v0.22.2 會讓「session 刪不掉」的限制復發，**不是合格的回滾產物**；② 比 2026-10-22 的新備份少 14 則訊息（17,657 vs 17,671）；③ 已由 `~/backups/hermes-20261022/state.db`（升級前快照、`schema_version=31`、ledger 為空、`integrity ok`）完整取代
+     - 保留期限：新備份保留 **3 天，至 2026-10-25**，到期後確認即可刪除
+     - 詳見：`UPGRADE_LOG_v0.22.2_to_v0.22.4.md` §8（備份政策與回滾程序）
 2. 建分支 + purge 54 → 1 workflows + cherry-pick 5 個自訂 commit（**全部零衝突**，因 Dockerfile blob 位元組相同）
 3. push → dispatch `ghcr-publish.yml`（input **`tag_name`**，非 `tag`）→ Run 38729951089
 4. `kubectl apply -k` → rollout success
