@@ -337,3 +337,59 @@ v0.22.5 起，若一個 home 用了任何離開 core 的功能，**gateway 開�
       gateway log 另有 `✓ telegram connected`、`getUpdates progressing (generation 1)`）。
 - [x] **備份處置**：`~/backups/hermes-20261024/`（176MB）— ✅ **保留**（schema 32，v0.22.5 升級前快照，integrity ok）；
       `~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。
+
+---
+
+## 17. 升級後由 Hermes Agent 自行執行的全面檢查（2026-10-24 14:26–14:41）
+
+> 完整報告：`docs/hermes-postupgrade-check-v0.22.5-report.md`
+> 提示詞：`docs/hermes-postupgrade-check-v0.22.5-prompt.md`（唯讀邊界）
+> 原始輸出：`docs/hermes-postupgrade-check-v0.22.5-report-raw.txt`（55,024 bytes）
+> 執行 session：`local-ec6857cb6f0d475c321ac8b109eaa5217226fb0986997f43ef18e71600495aee`（135 則訊息 / 133 次工具呼叫 / 15m 3s）
+
+### 17.1 結論
+
+> 整體健康，本次升級成功且未引入阻斷級問題。DB integrity_check 為 ok、schema_version 仍為 32
+> （未被 migration 推到 33）、sessions 128 / messages 17,791 均不低於升級前基線（127 / 17,702）、
+> config `_config_version` 仍為 51 且 `config.yaml` 檔案 mtime 停留在 10-15（升級完全沒有改寫設定檔）。
+> Pod 1/1 Running、RESTARTS=0、啟動於 14:10:26 CST，無 restart loop。
+> 升級後 14:05 之後的日誌中，ERROR/CRITICAL 精確 level 比對為 0 筆，唯一的 1 筆 Traceback 是本次檢查自己造成的。
+> left-core / catalog 自動安裝完全未觸發。
+
+### 17.2 對本次決策的回饋
+
+| 決策 | Agent 實測回饋 | 結論 |
+|---|---|---|
+| **C：npm 漏洞「不修」** | 同一支 `npm audit --package-lock-only`：v0.22.4 的 **24 個**（2 critical / 5 high）→ v0.22.5 的 **4 個**（0 critical / 2 high / 2 moderate）。容器內 `package-lock.json` sha256 = `d439feaa…` **與官方 v0.22.5 逐位元組相同**（cmp IDENTICAL），`package.json` 的 20 條 overrides 也與官方完全相同 | ✅ **「不修」決策完全正確** —— 漏洞是 upstream 在這 81 PR 內修好的，不需要任何本地 patch；而且**上游把它修得更好了** |
+| **D：FTS 不處理** | `fts_storage_version` ABSENT、`fts_optimize_available='1'`、`messages_fts` DDL 仍為 `fts5(content)`；且 `messages == messages_fts == messages_fts_trigram`（17,791 三者一致，orphan 0） | ✅ 維持 opt-in 正確，索引與主表一致無漂移 |
+| **R1：left-core** | 所有日誌 grep `left-core` / `Installing plugin` = **0 筆** | ✅ 預判正確 |
+| **R2：Node** | `v26.12.1` | ✅ |
+| **R3：base image** | `Debian GNU/Linux 13 (trixie)`、DEBIAN_VERSION 13.7、glibc `2.41-12+deb13u4` | ✅ |
+| **schema 未變** | `schema_version` = 32；`config.yaml` mtime = 2026-10-15 14:27:35（升級完全未改寫） | ✅ |
+
+### 17.3 Agent 指出的「需要人為決策」3 項（皆低優先、既有問題）
+
+| # | 事項 | 建議 |
+|---|---|---|
+| 1 | upstream 的 `package.json` overrides 把 `undici` 釘死在 `6.29.0` / `7.30.0`，恰好是 advisory 的漏洞版本上限 → `npm audit fix --force` 永遠報 "outside the stated dependency range"，**不會自癒** | **維持「不修」**，等 upstream 改 override。本地 patch lockfile 也撐不過下次 `hermes update`。實質曝險面：Hermes 的 Node 側僅 dashboard / ui-tui / agent-browser，DoS 型 advisory 需能送入畸形 response 才可能觸發 |
+| 2 | `config.yaml` 內同一個 camofox MCP 指向兩個 namespace（`mcp.servers.camofox.url` = `camofox-mcp.default…` / `mcp_servers.camofox.url` = `camofox-mcp.camofox…`） | 建議統一成一份，避免日後其中一份失效難以判斷。**pre-existing 不一致，與本次升級無關** |
+| 3 | `/root/.npm` / `/root/.cache` 的 owner 未能直接驗證（readonly SA 禁止 pods/exec、uid 10000 進不了 0700 的 `/root`） | 優先級低 —— 實務生效的 cache 是 `npm_config_cache=/tmp/.npm-cache`（1777，已驗證），`/root/.npm` 在本部署未被使用 |
+
+### 17.4 Agent 自我揭露的檢查侷限（誠實列出，值得肯定）
+
+1. `/root/.npm`、`/root/.cache` owner 未取得 stat 實測值（改以 Dockerfile hunk + stage2-hook 邏輯作間接證據）。
+2. image digest 無法在容器內做 registry 端二次交叉驗證（無 docker/containerd socket）。
+3. 「升級前 config 完整快照」不存在 → 改用 `config.yaml` mtime 作主要證據；4 處 effective/檔案差異皆屬 runtime 層現象（secret redaction、oneshot request 覆寫）。
+4. 日誌切分基準採 14:05；`errors.log` 15,145 筆中 9,910 筆無時間戳（traceback 內文），已用「回溯至最近時間戳行」歸屬。
+5. MCP server 實際連線端點未做連線層驗證。
+6. 依唯讀邊界未做寫入驗證 → FTS trigger 只做靜態一致性比對（messages == messages_fts == messages_fts_trigram，orphan 0）。
+
+### 17.5 獨立複核（由升級執行者另行驗證，非 Agent 自述）
+
+| 項目 | 值 | 判定 |
+|---|---|---|
+| pod imageID | `ghcr.io/kuniakil/hermes-agent@sha256:8fb00e4665e888ed3ce199269355cc0d596e1399f52f148c21403b06b0fb1660` | ✅ 與 build digest 一致 |
+| `schema_version` | 32 | ✅ 未變 |
+| `sessions` / `messages` | 128 / 17,839（檢查 session 本身在成長） | ✅ 不低於基線 |
+| `PRAGMA integrity_check` | ok | ✅ |
+| `messages` == `messages_fts` == `messages_fts_trigram` | 17,839 == 17,839 == 17,839 | ✅ FTS 與主表一致、orphan 0 |
