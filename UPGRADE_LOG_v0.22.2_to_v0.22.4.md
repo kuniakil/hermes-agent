@@ -203,7 +203,7 @@ state_meta.fts_storage_version      = （仍不存在）
 
 ## 9. 尚未完成（需使用者參與）
 
-- [ ] **真實 Telegram 訊息往返**（D12）：本地 `hermes chat --oneshot` 已驗證 agent turn 路徑正常，但 Telegram 端需使用者送一則訊息確認。
+- [x] **真實 Telegram 訊息往返**（D12）：✅ **已確認**（部署後 `session_admissions` 有 Telegram 實際往來記錄，2026-10-22 07:05 UTC 與 07:34 UTC，部署時間 06:31 UTC）。
 - [x] **備份處置**：`~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。
       取代者：`~/backups/hermes-20261024/`（schema 32，v0.22.5 升級前快照）。
       刪除依據：v0.22.4 → v0.22.5 的 schema **未變**（32→32），退回 v0.22.4 image **不依賴任何 DB 備份**，

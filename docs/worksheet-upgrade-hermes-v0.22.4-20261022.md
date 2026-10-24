@@ -356,7 +356,7 @@ state_meta.fts_storage_version      = （不存在）
 - [x] D9. **FTS 檢查**：`state_meta.fts_storage_version` 應**仍不存在**（我們維持 opt-in），`fts_optimize_available` = 1；確認 **沒有** 在 open 時自動重建（開機後 `messages_fts` 的 DDL 仍是 `fts5(content)`）
 - [x] D10. **auto-prune 檢查**：確認 `sessions.auto_prune` 仍為 `false`、config stamp 仍 51、**沒有**任何 migration 紀錄被寫入
 - [x] D11. 部署 60s 後 **0 restart**、log 無 ERROR/Traceback
-- [ ] D12. 真實訊息往返（Telegram 收 → 模型 → 工具 → 送出）→ **待使用者送一則訊息**
+- [x] D12. 真實訊息往返（Telegram 收 → 模型 → 工具 → 送出）→ ✅ **已確認**（2026-10-22 部署後有 Telegram 實際往來：`session_admissions` 記錄 07:05 UTC 與 07:34 UTC 兩則使用者訊息，部署時間為 06:31 UTC）
 
 ### Phase E — 收尾
 
@@ -531,7 +531,7 @@ sessions: 128 → 127   messages: 17,673 → 17,671   session_admissions: 1 → 
 
 ### 10.5 剩餘待辦
 
-- [ ] **D12 真實 Telegram 訊息往返**：本地 `hermes chat --oneshot` 已證明 agent turn 路徑正常（模型回覆「OK」，15s），但 Telegram 端需使用者送一則訊息做最終確認。
+- [x] **D12 真實 Telegram 訊息往返**：✅ **已確認**（部署後 `session_admissions` 有 Telegram 實際往來記錄，見上）。
 - [x] **備份處置**：`~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。
       取代者：`~/backups/hermes-20261024/`（schema 32，v0.22.5 升級前快照）。
 
