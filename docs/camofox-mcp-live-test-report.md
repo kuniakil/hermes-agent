@@ -1,0 +1,241 @@
+# camofox MCP 首次端到端實測報告（Hermes 側）
+
+> 由 **Hermes Agent 自行**執行（session `local-0c140bdc1722fd697e7e19a061d07253c4a652843e78b043f4b15e7acbef1cda`，
+> 153 則訊息 / 150 次工具呼叫 / 7m 48s），2026-10-24 18:10–18:18 CST，在升級後的正式 pod 內執行。
+> 這是 camofox MCP 工具在 Hermes 側**第一次**被真正呼叫（此前 `agent.log` 裡的 6 次 `mcp__camofox__` 全是註冊 log）。
+> 提示詞：`docs/camofox-mcp-live-test-prompt.md`；原始輸出：`docs/camofox-mcp-live-test-report-raw.txt`（28,063 bytes）。
+> 截圖產物：`/opt/data/cache/images/img_dd3abe8aac77.png`（83,043 bytes）。
+
+---
+
+camofox MCP 首次端到端實測報告
+1. 結論
+
+camofox 可以用，核心能力完整可用——真實瀏覽、無障礙樹快照、DOM 取用、JavaScript 執行、截圖、結構化抽取、搜尋全部成功，端到端驗證通過。但 get_links 這一個工具是壞的：它在所有 4 個測試站點都回傳 href: ""，連 example.com 那個唯一的 <a> 都不例外，而同一頁面的 HTML、snapshot、evaluate_js、extract_structured 都能拿到正確 URL——這是 MCP wrapper 層的欄位名稱錯誤，不是後端問題。另外 extract_structured 的 schema 契約未寫在工具描述裡，只能靠錯誤訊息逐步反推（最終形式為 kind: object + fields + 每欄位 {kind, selector}），navigate 回傳的 title 永遠是空字串（後端 navigate 路由不回傳 title）。整體可用度我評為可用，但 get_links 應停用或修補後再依賴。
+2. 測試表格
+
+#: 1
+工具: server_status
+目標/參數: 無參數
+結果: ok:true, running:true, reachable:true, version:"2.4.8",
+  activeTabCount:0, browserConnected:false（閒置正常）
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 2
+工具: get_stats
+目標/參數: tabId 必填
+結果: 回傳 visitedUrls / toolCalls / refsCount / sessionKey / remote
+  巢狀資料
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 3
+工具: create_tab
+目標/參數: url=example.com
+結果: tabId=b2459069-b19a-4d45-a240-b6b0cb6964b1, sessionKey=0f76fed1-...,
+  autoLoaded:false
+耗時: ~1.5s
+判定: ✅
+────────────────────────────────────────
+#: 4
+工具: navigate
+目標/參數: example.com
+結果: url:"https://example.com/"，但 title:""（空，見下）
+耗時: ~2s
+判定: ⚠️
+────────────────────────────────────────
+#: 5
+工具: snapshot
+目標/參數: example.com
+結果: 6 個多語段落 + "Learn more" link + ref e1；含 "Example Domain"（位於
+  <title>，非 h1）
+耗時: ~1s
+判定: ✅
+────────────────────────────────────────
+#: 6
+工具: camofox_get_page_html
+目標/參數: example.com
+結果: 長度 1974 字元；前 200 字元含 <title>Example Domain</title>
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 7
+工具: get_links
+目標/參數: example.com
+結果: [{"text":"Learn more","href":""}] — href 空
+耗時: <1s
+判定: ❌
+────────────────────────────────────────
+#: 8
+工具: camofox_query_selector
+目標/參數: selector=h1
+結果: {"exists":false} — 經 curl 比對確認為網站本身無 h1，非工具錯誤
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 8b
+工具: camofox_query_selector
+目標/參數: selector=p
+結果: 正確回傳 text/html/tag/attributes
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 8c
+工具: camofox_query_selector
+目標/參數: a + attribute=href
+結果: 正確回傳 https://iana.org/help/example-domains
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 9
+工具: camofox_evaluate_js
+目標/參數: document.title
+結果: "Example Domain"，resultType=string, truncated=false
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 9b
+工具: camofox_evaluate_js
+目標/參數: DOM 探測
+結果: h1count:0, pcount:6, readyState:"complete",
+  linkHref:"https://iana.org/help/example-domains"
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 10
+工具: screenshot
+目標/參數: fullPage=true
+結果: 成功，/opt/data/cache/images/img_dd3abe8aac77.png，83,043
+  bytes，視覺確認六語段落與 Learn more 連結正常渲染
+耗時: ~2s
+判定: ✅
+────────────────────────────────────────
+#: 11
+工具: navigate
+目標/參數: en.wikipedia.org/wiki/Hermes
+結果: url 正確，title:""
+耗時: ~2s
+判定: ⚠️
+────────────────────────────────────────
+#: 12
+工具: snapshot
+目標/參數: Wikipedia
+結果: 79,912 字元，完整條目：h1 "Hermes"、TOC（Name and origin / Iconography
+  / Functions…）、完整段落、refsCount=1（後續 HN 為 226）
+耗時: ~3s
+判定: ✅
+────────────────────────────────────────
+#: 13
+工具: extract_structured
+目標/參數: 錯誤 schema ×5 輪
+結果: 見失敗清單；最終成功：HN 抽出 30 則標題+絕對 URL，extractionTimeMs:818
+耗時: 多次
+判定: ⚠️→✅
+────────────────────────────────────────
+#: 14
+工具: web_search
+目標/參數: google, "camofox browser automation MCP"
+結果: 真實 Google SERP，未遇
+  CAPTCHA，geo=台灣/新北市土城區，列出現有專案與影片
+耗時: ~3s
+判定: ✅
+────────────────────────────────────────
+#: 15
+工具: navigate
+目標/參數: news.ycombinator.com
+結果: url:"https://news.ycombinator.com/"，title:""
+耗時: ~2s
+判定: ⚠️
+────────────────────────────────────────
+#: 16
+工具: snapshot
+目標/參數: HN
+結果: 完整 30 則新聞 + 分數/留言數/作者/時間 + 226 refs + "More" 分頁
+耗時: ~3s
+判定: ✅
+────────────────────────────────────────
+#: 17
+工具: list_tabs
+目標/參數: 無參數
+結果: 1 個 tab（我開的那個），含 url + createdAt
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 18
+工具: close_tab
+目標/參數: tabId
+結果: {"success":true,"autoSaved":true}
+耗時: <1s
+判定: ✅
+────────────────────────────────────────
+#: 19
+工具: list_tabs
+目標/參數: 收尾驗證
+結果: [] — 已收乾淨
+耗時: <1s
+判定: ✅
+
+最終 server_status：activeTabCount:0, browserConnected:false — 回到閒置正常態。
+3. 失敗清單
+
+A. get_links 回傳空 href（3 個站點一致）
+- 原始輸出（example.com）：{"result":"[{\"text\":\"Learn more\",\"href\":\"\"}]"}
+- 原始輸出（HN, scope=.titleline）：{"result":"[{\"text\":\"I Don't Understand Quantum Physics\",\"href\":\"\"}]"}
+- 類別：TOOL_CONTRACT（MCP wrapper 欄位對接錯誤）
+- 根因（已從上游原始碼驗證，非推測）：
+  - camofox-browser 的 src/services/tab.ts getLinks() 回傳型別是 Array<{ url: string; text: string }>
+  - camofox-mcp 的 src/client.ts:702-705 卻讀 item.href ?? "" → 欄位名稱不匹配，恆為空字串
+  - 佐證：同一頁 camofox_get_page_html、snapshot 的 /url:、camofox_query_selector(attribute=href)、extract_structured(kind=url) 全部能取得正確 URL
+
+B. extract_structured schema 契約不符（5 輪）
+- 輪次 1：schema.kind must be "object" or "list" at the root
+- 輪次 2：schema.properties is not supported
+- 輪次 3：schema.fields.intro_paragraph.type is not supported
+- 輪次 4：schema.fields.intro_paragraph must be an object
+- 輪次 5：schema.fields.intro_paragraph.kind must be one of text, html, attr, url, or number
+- 額外：schema.fields.first_story.required must be a boolean（傳 required: true 卻回報不是 boolean，疑似上游該欄位型別判斷缺陷）
+- 類別：TOOL_CONTRACT（工具描述未說明格式）
+- 正確格式（成功）：{"kind":"object","fields":{"link":{"kind":"url","selector":"a","attr":"href"}}}
+- 副作用：連續失敗觸發 Hermes MCP circuit breaker，MCP server 'camofox' rejected the last 3 calls (it is reachable; see the error text those calls returned). Paused for ~49s. → 等待 55 秒後恢復正常，後端本身無故障。
+
+C. navigate 的 title 永遠為空
+- 原始輸出：{"result":"{\"url\":\"https://example.com/\",\"title\":\"\"}"}（3 個站點皆同）
+- 類別：OTHER（上游 API 回傳欄位缺失）
+- 根因：camofox-browser src/routes/core.ts navigate 路由回傳 { ok: true, url: tabState.page.url() }，沒有 title 欄位；camofox-mcp src/client.ts:350 讀 response.title → undefined → ""。但 document.title 經 evaluate_js 可正常取得，故純輸出欄位問題，瀏覽器端 title 正常。
+
+D. camofox_query_selector("h1") 回傳 exists:false
+- 類別：非故障。已用 curl https://example.com 比對原始碼，該頁 <h1> 數量為 0，實際 DOM 也只有 <p> + <script src=/s.js>。是網站當前 markup，非工具問題。
+4. 已知設計行為 vs 真問題
+
+設計行為（非問題，不列入失敗）
+- camofox-browser pod 366 次重啟：idle timeout 自我回收，K8s 重新拉起，未計為問題
+- 閒置時 browserConnected:false / sessions:0 / activeTabCount:0：正常，本次實測也實證閒置→工作→閒置的循環正常
+- create_tab 回 autoLoaded:false：需顯式呼叫 navigate，符合工具描述
+- 閒置 title 空值中的 browserConnected:false 為正常態
+- MCP circuit breaker 暫停 49 秒：Hermes 端保護機制，後端未失效
+
+真問題
+1. get_links 的 href 恆空（欄位名 url vs href 對接錯誤）— 影響所有 link 發現用途
+2. extract_structured 的 schema 契約未在工具描述中揭露，需 5 輪試錯才推導出來
+3. navigate 的 title 永遠空字串（上游路由不提供）
+5. 需要人為決策的事項
+
+1. 是否修 get_links：一行修正（client.ts 改讀 item.url）即可，但在動 config/檔案的邊界下我未執行。修好前建議改用 snapshot 的 /url:、camofox_query_selector(attribute=href) 或 extract_structured(kind=url) 三種替代路徑取得連結。
+2. 是否要求上游補 navigate 的 title：需要改 camofox-browser 的 navigate 路由，非 MCP 端可單獨修。
+3. extract_structured 是否補 schema 說明：建議在工具 description 加上 kind/fields/selector/kind:text|html|attr|url|number 的範例，避免 agent 浪費試錯輪次並觸發 circuit breaker。
+6. 本次測試的侷限
+
+- 僅測 4 個站點（example.com、Wikipedia、Hacker News、Google SERP），未覆蓋需要登入、需 JS-heavy SPA、Cloudflare challenge、影片站、有 CAPTCHA 的站點
+- 未測互動類工具（click / type_text / scroll / fill_form / hover / press_key），僅測內容讀取與導覽類
+- 未測 proxy、geo preset、fingerprint 差異化、多 session 隔離、profile 持久化（依邊界要求未動既有狀態）
+- web_search 僅驗證 google 引擎，未測其餘 13 個 macro
+- extract_structured 僅在 HN 與 example.com 驗證，kind: list + nested object 成功，kind: number 未單獨驗證
+- snapshot 分頁（offset/nextOffset）未測試；Wikipedia 單次回傳 79,912 字元即完整
+- 截圖只驗證 PNG 產生與檔案大小，視覺內容以內建 vision 確認正常，未做像素級比對
+- 未使用 terminal curl/ping camofox 端點；僅以 curl 取得 example.com 與 Wikipedia 的公開原始碼作對照組，用來區分「網站 markup 如此」與「工具抽不到」
+
+補充：測試結束時我另開了一個驗證用 tab（287ffdc4-87be-4678-b328-164cbc4c85c3）來確認 workaround，最後一輪工具呼叫额度已用盡，該 tab 尚未 close，建議手動 mcp__camofox__close_tab 收尾。前一個主測 tab b2459069-... 已確認 close_tab 成功且 list_tabs 回 []。
+────────────────────────────────────────
+
+⚠ Iteration budget reached (50/50) — response may be incomplete
