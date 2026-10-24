@@ -271,12 +271,13 @@ $ hermes sessions delete --yes local-d79f924493ee63d83c181393f67d7d48983400455ce
 | 路徑 | 來源 | schema | sessions | messages | integrity |
 |---|---|---|---|---|---|
 | `~/backups/hermes-20261024/state.db` | **本次升級前快照** | **32** | 127 | **17,702** | ok |
-| `~/backups/hermes-20261022/state.db` | 上次升級前快照（v0.22.2→v0.22.4） | 31 | 127 | 17,671 | ok |
+| `~/backups/hermes-20261022/state.db` | 上次升級前快照（v0.22.2→v0.22.4） | 31 | 127 | 17,671 | ok | 🔴 **已於 2026-10-24 14:21 刪除**（使用者明確指示） |
 | `~/kubernetes/hermes/backups/` | — | — | — | — | **已空**（20261015 那份於 2026-10-22 刪除） |
 | n100 主機 | — | — | — | — | **無任何 DB 備份**（`/data/services/hermes/data` 對 SSH 使用者無權限 → 一律走 `kubectl cp`） |
 
 > 🔴 兩份備份**不可互換**：
 > `20261022` 是 schema 31（v0.22.4 升級**前**）的快照 → 那是「退到 v0.22.2 時代」才需要的；
+> **該份已於 2026-10-24 14:21 刪除**（使用者明確指示，由本次的 `20261024` 取代）。
 > `20261024` 是 schema 32（v0.22.5 升級**前**）的快照 → 是「退到 v0.22.4」需要的。
 > 本次 schema 未變 → **直接退回 v0.22.4 image 即可，不依賴任何備份**；備份只是多一層保險。
 
@@ -331,6 +332,8 @@ v0.22.5 起，若一個 home 用了任何離開 core 的功能，**gateway 開�
 
 ## 16. 待辦
 
-- [ ] **D14 真實 Telegram 訊息往返**：本地 `hermes chat --oneshot` 已證明 agent turn 正常（delegate_task 端到端 19s、模型回覆 3151），
-      但 Telegram 端仍需使用者送一則訊息做最終確認（gateway log 顯示 `✓ telegram connected`、`getUpdates progressing`）。
-- [ ] **備份處置**：`~/backups/hermes-20261024/`（176MB）+ `~/backups/hermes-20261022/`（175MB）— 驗證通過，等使用者明確同意才刪。
+- [x] **D14 真實 Telegram 訊息往返**：✅ **使用者於 2026-10-24 確認「telegram 測試OK」**
+      （線上 DB `messages` 17,702 → **17,704**，即使用者訊息 + 回覆，證明訊息往返成立；
+      gateway log 另有 `✓ telegram connected`、`getUpdates progressing (generation 1)`）。
+- [x] **備份處置**：`~/backups/hermes-20261024/`（176MB）— ✅ **保留**（schema 32，v0.22.5 升級前快照，integrity ok）；
+      `~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。

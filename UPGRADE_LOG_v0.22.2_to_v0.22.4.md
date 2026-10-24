@@ -10,6 +10,7 @@
 - **GH Actions Run**：**39733973873**（prepare / linux-amd64 / linux-arm64 / merge 全部 success）
 - **部署**：n100 / K3s，`newTag: v0.22.4`，rollout successfully rolled out，**0 restarts**（強制刪 pod 重啟後仍 0）
 - **備份**：`~/backups/hermes-20261022/state.db`（175,075,328 bytes，`PRAGMA integrity_check = ok`）
+  - 🔴 **已於 2026-10-24 14:21 刪除**（使用者明確指示；由 `~/backups/hermes-20261024/` 取代）。見本文 §9 與 §10.1 的刪除標記。
   - ⚠️ 這是**升級前**的快照（`schema_version = 31`、ledger 為空、messages 17,671），**正是回滾到 v0.22.2 image 所需的正確產物**
 - **工作表**：`docs/worksheet-upgrade-hermes-v0.22.4-20261022.md`
 
@@ -73,6 +74,7 @@ v0.22.4 一旦跑起來就會重新寫入 `session_admissions`。此時若把 im
 
 > **結論：本次備份是 MANDATORY，且升級後若要回退，必須用備份 DB，不能只換 image。**
 > 備份位置：`~/backups/hermes-20261022/state.db`（175MB，integrity ok）。
+> 🔴 **該備份已於 2026-10-24 14:21 刪除**（使用者明確指示；由 `~/backups/hermes-20261024/` 取代）。
 
 ---
 
@@ -202,7 +204,10 @@ state_meta.fts_storage_version      = （仍不存在）
 ## 9. 尚未完成（需使用者參與）
 
 - [ ] **真實 Telegram 訊息往返**（D12）：本地 `hermes chat --oneshot` 已驗證 agent turn 路徑正常，但 Telegram 端需使用者送一則訊息確認。
-- [ ] **備份處置**：`~/backups/hermes-20261022/`（175MB）— 驗證已通過，等使用者明確同意才刪。
+- [x] **備份處置**：`~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。
+      取代者：`~/backups/hermes-20261024/`（schema 32，v0.22.5 升級前快照）。
+      刪除依據：v0.22.4 → v0.22.5 的 schema **未變**（32→32），退回 v0.22.4 image **不依賴任何 DB 備份**，
+      且本次 schema 未變 → v0.22.5 也不需要舊的 schema 31 快照。
 
 ---
 
@@ -212,7 +217,7 @@ state_meta.fts_storage_version      = （仍不存在）
 
 | 路徑 | 來源 | schema | sessions | messages | `session_admissions` | integrity | 用途 |
 |---|---|---|---|---|---|---|---|
-| `~/backups/hermes-20261022/state.db` | **本次升級前快照**（2026-10-22 14:12） | **31** | 127 | **17,671** | **0** | ok | ✅ **回滾 v0.22.2 image 的正確產物**（升級前狀態、ledger 空） |
+| `~/backups/hermes-20261022/state.db` | **本次升級前快照**（2026-10-22 14:12） | **31** | 127 | **17,671** | **0** | ok | 🔴 **已於 2026-10-24 14:21 刪除**（使用者明確指示；由 `~/backups/hermes-20261024/` 取代） |
 | `~/kubernetes/hermes/backups/20261015/state.db` | **上次升級（v0.22.1→v0.22.2）殘留**，2026-10-15 19:47 | 31 | 127 | 17,657 | **3** | ok | ⚠️ v0.22.1 殘留 ledger（清場前）；**帶它回滾會讓「session 刪不掉」限制復發** |
 | `~/kubernetes/hermes/backups/` | 被 `~/kubernetes/.gitignore` 的 `backups/` 規則排除 | — | — | — | — | — | 未進 git ✅ |
 | `/opt/data/backups/config/`（pod 內） | 2026-10-15 的 **config** 備份（184K） | — | — | — | — | — | 非 DB 備份 |
@@ -225,9 +230,13 @@ state_meta.fts_storage_version      = （仍不存在）
 ### 10.2 回滾步驟（若必須退回 v0.22.2 image）
 
 1. `kubectl apply -k ~/kubernetes/hermes/overlays/n100`（把 `newTag` 改回 `v0.22.2`）；
-2. **必須同時用備份 DB 還原** `/opt/data/state.db`（用 `~/backups/hermes-20261022/state.db`，**不要**用 20261015 那份）：
-   否則帶 ledger 歷史的 session 會被 `sessions_runtime_ledger_delete_guard` 阻擋而刪不掉
-   （v0.22.4 已在 `session_admissions` 寫入新列）；
+2. **必須同時用備份 DB 還原** `/opt/data/state.db`：
+   - 🔴 `~/backups/hermes-20261022/state.db` **已於 2026-10-24 刪除**；
+     若仍需退回 v0.22.2，請改用 `~/backups/hermes-20261024/state.db`（schema 32、ledger 為當前版本形態），
+     或就地重新做一次升級前快照（`sqlite3.Connection.backup()` + `kubectl exec -- cat`）。
+   - **不要**用 20261015 那份（帶著 3 列 v0.22.1 殘留 ledger）：
+     否則帶 ledger 歷史的 session 會被 `sessions_runtime_ledger_delete_guard` 阻擋而刪不掉
+     （v0.22.4 已在 `session_admissions` 寫入新列）；
 3. 官方文件建議的正規路徑是 `hermes update --backup` + `/snapshot restore <id>` 或 `hermes import <backup.zip>`。
 
 ---
