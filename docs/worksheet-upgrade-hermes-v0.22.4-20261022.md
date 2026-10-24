@@ -14,6 +14,7 @@
 - **資料完整性**：sessions 127 / messages 17,671（升級前後一致，integrity ok）
 - **schema_version**：31 → **32**（additive，無資料遷移）
 - **備份**：`~/backups/hermes-20261022/state.db`（175,075,328 bytes，integrity ok）
+  - 🔴 **已於 2026-10-24 14:21 刪除**（使用者明確指示；由 `~/backups/hermes-20261024/` 取代）。
 - **日期**：2026-10-22
 
 ---
@@ -363,7 +364,7 @@ state_meta.fts_storage_version      = （不存在）
 - [x] E2. 在 post-mortem 加入「v0.22.3/4 是 620 PR 收斂版、官方 curated notes 延到 v0.23.0」與「FTS layout drift 是既有狀態」
 - [x] E3. 本工作表同步實際執行結果（image digest / run id / 實測數字）
 - [x] E4. `~/kubernetes` kustomization 變更 commit + push
-- [x] E5. 備份處置：**已提示使用者，等明確同意才刪**（未刪）（`~/backups/hermes-20261022`）
+- [x] E5. 備份處置：~~等明確同意才刪~~ → ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示；由 `~/backups/hermes-20261024/` 取代）
 
 ---
 
@@ -531,7 +532,8 @@ sessions: 128 → 127   messages: 17,673 → 17,671   session_admissions: 1 → 
 ### 10.5 剩餘待辦
 
 - [ ] **D12 真實 Telegram 訊息往返**：本地 `hermes chat --oneshot` 已證明 agent turn 路徑正常（模型回覆「OK」，15s），但 Telegram 端需使用者送一則訊息做最終確認。
-- [ ] **備份處置**：`~/backups/hermes-20261022/`（175MB）— 驗證通過，等使用者明確同意才刪。
+- [x] **備份處置**：`~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。
+      取代者：`~/backups/hermes-20261024/`（schema 32，v0.22.5 升級前快照）。
 
 ---
 
@@ -541,7 +543,7 @@ sessions: 128 → 127   messages: 17,673 → 17,671   session_admissions: 1 → 
 
 | 路徑 | 來源 | schema | sessions | messages | `session_admissions` | integrity |
 |---|---|---|---|---|---|---|
-| `~/backups/hermes-20261022/state.db` | **本次升級前快照** | **31** | 127 | **17,671** | **0** | ok |
+| `~/backups/hermes-20261022/state.db` | **本次升級前快照** | **31** | 127 | **17,671** | **0** | ok | 🔴 **已於 2026-10-24 14:21 刪除** |
 | `~/kubernetes/hermes/backups/20261015/state.db` | **上次升級殘留**（v0.22.1→v0.22.2，2026-10-15 19:47） | 31 | 127 | 17,657 | **3** | ok |
 | `~/hermes/data/state.db` | 本機開發用 live DB（非備份） | — | — | — | — | — |
 | `/opt/data/backups/config/`（pod） | config 備份 184K（非 DB） | — | — | — | — | — |
@@ -552,4 +554,5 @@ sessions: 128 → 127   messages: 17,673 → 17,671   session_admissions: 1 → 
 
 1. ✅ **上次升級（20261015）的備份還在** → `~/kubernetes/hermes/backups/20261015/`，且被 `~/kubernetes/.gitignore` 的 `backups/` 規則排除，未進 git。
 2. 🔴 **兩份 DB 備份不可互換**：20261015 那份帶著 **3 列 v0.22.1 殘留 ledger**（當時造成「session 刪不掉」的那 3 列，清場前的狀態）；本次 20261022 那份 **ledger 為空** → **回滾 v0.22.2 image 必須用 20261022 那份**。
+   - 🔴 **20261022 那份已於 2026-10-24 14:21 刪除**（使用者明確指示，由 `~/backups/hermes-20261024/` 取代）。
 3. ℹ️ 本次備份是**升級前**快照（`schema_version = 31`）—— 這正是回滾所需的正確形態，升級後 DB 已升到 32。

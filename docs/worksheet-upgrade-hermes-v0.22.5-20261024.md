@@ -276,7 +276,7 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
   ```
 - [x] 0.6 驗證備份：`sqlite3 ~/backups/hermes-20261024/state.db "SELECT COUNT(*) FROM messages"` → **17702**
 - [x] 0.7 盤點既有備份並回報使用者
-  - `~/backups/hermes-20261022/`（v0.22.4 升級前快照，schema 31，messages 17,671）— **仍在**
+  - `~/backups/hermes-20261022/`（v0.22.4 升級前快照，schema 31，messages 17,671）— 🔴 **已於 2026-10-24 14:21 刪除**（使用者明確指示）
   - `~/kubernetes/hermes/backups/` — **已空**（20261015 那份於 2026-10-22 刪除）
   - n100 主機 — **無任何 DB 備份**（`/data/services/hermes/data` 對 SSH 使用者無權限 → 一律走 `kubectl cp`）
 - [x] 0.8 確認 `sessions.auto_prune: false`、`_config_version: 51` 未變
@@ -353,7 +353,7 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
 - [x] D11. **FTS 檢查**：`state_meta.fts_storage_version` 應**仍不存在**、`fts_optimize_available` = 1；確認**沒有**在 open 時自動重建（`messages_fts` DDL 仍是 `fts5(content)`）
 - [x] D12. **auto-prune 檢查**：`sessions.auto_prune` 仍為 `false`、`_config_version` 仍 51、**沒有**任何 migration 紀錄被寫入
 - [x] D13. 部署 60s 後 **0 restart**、log 無 ERROR/Traceback
-- [ ] D14. 真實訊息往返（Telegram 收 → 模型 → 工具 → 送出）→ **待使用者送一則訊息**
+- [x] D14. 真實訊息往返（Telegram 收 → 模型 → 工具 → 送出）→ ✅ **使用者於 2026-10-24 確認「telegram 測試OK」**（線上 DB `messages` 17,702 → 17,704）
 
 ### Phase E — 收尾
 
@@ -361,7 +361,7 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
 - [x] E2. 在 post-mortem 加入「v0.22.5 是 81 PR 正常 patch 窗口、官方 curated notes 仍延到 v0.23.0」
 - [x] E3. 本工作表同步實際執行結果（image digest / run id / 實測數字）
 - [x] E4. `~/kubernetes` kustomization 變更 commit + push
-- [ ] E5. 備份處置：**已提示使用者，等明確同意才刪**（`~/backups/hermes-20261024`）
+- [x] E5. 備份處置：`~/backups/hermes-20261024/`（176MB）→ ✅ **保留**；`~/backups/hermes-20261022/`（175MB）→ ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）
 
 ---
 
@@ -544,7 +544,8 @@ $ hermes sessions delete --yes local-d79f924493ee63d83c181393f67d7d48983400455ce
 
 ### 10.7 剩餘待辦
 
-- [ ] **D14 真實 Telegram 訊息往返**：本地 `hermes chat --oneshot` 已證明 agent turn 正常（delegate_task 端到端 19s），但 Telegram 端需使用者送一則訊息做最終確認。
-- [ ] **備份處置**：`~/backups/hermes-20261024/`（176MB）+ `~/backups/hermes-20261022/`（175MB）— 驗證通過，等使用者明確同意才刪。
+- [x] **D14 真實 Telegram 訊息往返**：✅ **使用者於 2026-10-24 確認「telegram 測試OK」**（線上 DB `messages` 17,702 → **17,704**）。
+- [x] **備份處置**：`~/backups/hermes-20261024/`（176MB）— ✅ **保留**；
+      `~/backups/hermes-20261022/`（175MB）— ✅ **已於 2026-10-24 14:21 刪除**（使用者明確指示）。
 
 > 📌 詳細升級紀錄與 post-mortem 見 `UPGRADE_LOG_v0.22.4_to_v0.22.5.md`。
