@@ -393,3 +393,91 @@ v0.22.5 起，若一個 home 用了任何離開 core 的功能，**gateway 開�
 | `sessions` / `messages` | 128 / 17,839（檢查 session 本身在成長） | ✅ 不低於基線 |
 | `PRAGMA integrity_check` | ok | ✅ |
 | `messages` == `messages_fts` == `messages_fts_trigram` | 17,839 == 17,839 == 17,839 | ✅ FTS 與主表一致、orphan 0 |
+
+---
+
+## 18. 附帶修復：camofox MCP 重複設定清理（2026-10-24 18:00）
+
+> 由升級後的 Hermes Agent 全面檢查（§17）在「需要人為決策的事項」中回報，經查證後修復。
+
+### 18.1 問題
+
+`/opt/data/config.yaml` 內同一個 camofox MCP server 被**設定兩次**：
+
+| 位置 | YAML 路徑 | URL | 狀態 |
+|---|---|---|---|
+| `config.yaml:78-84` | `mcp.servers.camofox`（巢狀於 `mcp:` 底下） | `http://camofox-mcp.**default**.svc.cluster.local:8080/mcp` | 🔴 **完全無效** |
+| `config.yaml:544-548` | `mcp_servers.camofox`（top-level legacy 鍵） | `http://camofox-mcp.**camofox**.svc.cluster.local:8080/mcp` | 🟢 **唯一生效者** |
+
+### 18.2 根因（三層證據）
+
+1. **Runtime 只讀 top-level `mcp_servers`**：`tools/mcp_tool_config.py::_load_mcp_config()` → `load_config().get("mcp_servers")`。
+   整個 codebase **無任何一行讀 `mcp.servers`**（v0.22.1 / .2 / .4 / .5 四版皆零命中）。
+2. **`mcp:` 區塊的用途不是放 server 定義**：`hermes_cli/config_defaults.py:554` 註解明寫
+   `"mcp": {  # MCP runtime behavior (distinct from mcp_servers: definitions and auxiliary.mcp).`，
+   其合法鍵只有 `auto_reload_on_config_change` 與 `discovery_concurrency`。
+3. **無任何 Hermes 指令會寫出 `mcp.servers`** → 該區塊為人手寫入（config.yaml 屬 hostPath 手動維護檔，mtime 2026-10-15 14:27:35）。
+
+### 18.3 且該 URL 本身是錯的
+
+`camofox-mcp` Service 實際位於 **`camofox` namespace**（`10.43.250.235:8080`）。從 pod 內 DNS 實測：
+
+```
+camofox-mcp.camofox.svc.cluster.local  -> 10.43.250.235
+camofox-mcp.default.svc.cluster.local -> DNS FAIL: gaierror [Errno -2] Name or service not known
+```
+
+> 📌 **錯 URL 的可能來源**：`~/kubernetes/openclaw/overlays/n100/openclaw-camofox-config.yaml`
+> 也是 `camofox-mcp.default.svc.cluster.local` → 推測是從 OpenClaw 的設定複製而來。
+
+### 18.4 修復前的實際影響
+
+- 生效那份的 URL 正確 → `agent.log` **3,804 次** camofox MCP 連線全部 `200 OK`，**零失敗**
+- 所有日誌中 `camofox-mcp.default` 出現次數 = **0**
+- → **功能上零影響**；但存在「上游若支援 nested 格式即立刻爆掉」的未來風險，以及維護混淆
+
+### 18.5 修復內容
+
+**A. `/opt/data/config.yaml`**（Pod hostPath，備份 `config.yaml.bak-20261024-camofox-mcp`）
+
+- 以**純文字精確替換**移除 `mcp:` 整塊（7 行），**不經 YAML round-trip** → 其餘內容 byte-for-byte 不變、註解保留
+- 原子寫入（tmp + `os.replace`），並修正 `os.replace` 遺失的 owner → 最終 `640 hermes:hermes 10000:10000`（與原檔一致）
+- 驗證（Hermes 自己的 loader）：
+  - raw config 無 `mcp` 鍵 ✅
+  - effective config `mcp` = `{'auto_reload_on_config_change': True, 'discovery_concurrency': 4}` ✅（= DEFAULT_CONFIG，與修改前一致）
+  - `mcp_servers.camofox` URL 仍為 camofox namespace ✅
+  - `browser.camofox`（瀏覽器功能，另一個區塊）未受影響 ✅
+- `hermes mcp list` → `camofox | http://camofox-mcp.camofo... | all | ✓ enabled` ✅
+
+**B. `~/kubernetes/hermes/overlays/n100/` 三個孤兒資源**
+
+| 檔案 | 問題 | 處置 |
+|---|---|---|
+| `hermes-config-patch.yaml` | `kustomization.yaml` 的 `patches:` **從未引用** → 其 `envFrom`（ConfigMap + Secret）從未進過 pod | 刪除 |
+| `hermes-camofox-config.yaml` | ConfigMap `CAMOFOX_MCP_URL` —— **無任何程式讀取**，且指向外部網域 `camofox.3pm.lol`（與 cluster 內 service 是兩套東西） | 刪除 |
+| `camofox-secret.yaml` | Secret `camofox-api-key` 的 `CAMOFOX_HTTP_API_KEY` 與 reflector 管理的 `secrets-env` **值完全相同** → 重複憑證 | 刪除 |
+
+- 全 cluster 掃描（deploy/statefulset/daemonset/pod × envFrom/env）→ 對兩資源的引用數 = **0**
+- `kubectl apply -k` → 移除 resources 清單中的 configmap（apply 不 prune，故另行 `kubectl delete` 兩個 cluster 資源）
+- 驗證：pod env 仍有 `CAMOFOX_HTTP_API_KEY`（來自 `secrets-env`）✅、`CAMOFOX_MCP_URL` 未設定 ✅
+
+### 18.6 修復後驗證
+
+| 檢查 | 結果 |
+|---|---|
+| Pod 重啟 | `hermes-agent-665b4bfd7b-dfjlm` · 0 restarts |
+| MCP server | ✅ `MCP server 'camofox' (HTTP): registered 49 tool(s)` |
+| MCP 連線端點 | `http://camofox-mcp.camofox.svc.cluster.local:8080/mcp` → 200 OK |
+| Telegram | ✅ `✓ telegram connected` / `getUpdates progressing (generation 1)` |
+| 本次開機後 ERROR/CRITICAL | **0** |
+| `schema_version` / integrity | 32 / ok |
+| `sessions` / `messages` | 128 / 17,839（不低於基線） |
+| `hermes doctor` | 4 issues，與修復前同一組（1 API key + 4 npm），無新增 |
+
+### 18.7 同型問題（未修，僅記錄）
+
+`~/kubernetes/openclaw/overlays/n100/openclaw-camofox-config.yaml` 有**完全相同**的兩項問題：
+① 該 ConfigMap **未被** `openclaw/overlays/n100/kustomization.yaml` 的 resources 引用 → 從未套用；
+② URL 指向不存在的 `camofox-mcp.default` namespace。
+且 OpenClaw 的 `openclaw.json` 內**並無任何 camofox MCP 設定** → 該檔案完全無用。
+（本次未動 OpenClaw deployment；如需清理請另行確認。）
