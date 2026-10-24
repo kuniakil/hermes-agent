@@ -260,13 +260,13 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
 
 ### Phase 0 — 停機前盤點 + 備份（MANDATORY）
 
-- [ ] 0.1 確認無使用中：`kubectl exec ... -- python3` 查 24h 內訊息數與最後一則時間
-- [ ] 0.2 記錄基線（部署後不得下降）
+- [x] 0.1 確認無使用中：`kubectl exec ... -- python3` 查 24h 內訊息數與最後一則時間
+- [x] 0.2 記錄基線（部署後不得下降）
   - **現行基線（2026-10-24 實測）**：`sessions = 127`、`messages = 17,702`、`state.db = 175MB`、`integrity = ok`
   - `session_admissions = 2`、`worker_executions = 0`、`worker_receipts = 0`、`runtime_epoch = 1`
-- [ ] 0.3 記錄 FTS 現況：`fts_optimize_available = 1`、`fts_storage_version` 不存在、`messages_fts` = 舊 layout（維持 opt-in，本次不動）
-- [ ] 0.4 記錄 config 基線：`_config_version: 51`、`terminal.backend: local`、`sessions.auto_prune: false`、`security.allow_lazy_installs: true`、`toolsets: [hermes-cli]`
-- [ ] 0.5 **備份 DB（.db + .db-wal + .db-shm，缺一則不完整）**
+- [x] 0.3 記錄 FTS 現況：`fts_optimize_available = 1`、`fts_storage_version` 不存在、`messages_fts` = 舊 layout（維持 opt-in，本次不動）
+- [x] 0.4 記錄 config 基線：`_config_version: 51`、`terminal.backend: local`、`sessions.auto_prune: false`、`security.allow_lazy_installs: true`、`toolsets: [hermes-cli]`
+- [x] 0.5 **備份 DB（.db + .db-wal + .db-shm，缺一則不完整）**
   ```bash
   POD=$(kubectl get pod -n hermes -o jsonpath='{.items[0].metadata.name}')
   mkdir -p ~/backups/hermes-20261024
@@ -274,68 +274,68 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
   kubectl cp -n hermes $POD:/opt/data/state.db-wal  ~/backups/hermes-20261024/state.db-wal
   kubectl cp -n hermes $POD:/opt/data/state.db-shm  ~/backups/hermes-20261024/state.db-shm
   ```
-- [ ] 0.6 驗證備份：`sqlite3 ~/backups/hermes-20261024/state.db "SELECT COUNT(*) FROM messages"` → **17702**
-- [ ] 0.7 盤點既有備份並回報使用者
+- [x] 0.6 驗證備份：`sqlite3 ~/backups/hermes-20261024/state.db "SELECT COUNT(*) FROM messages"` → **17702**
+- [x] 0.7 盤點既有備份並回報使用者
   - `~/backups/hermes-20261022/`（v0.22.4 升級前快照，schema 31，messages 17,671）— **仍在**
   - `~/kubernetes/hermes/backups/` — **已空**（20261015 那份於 2026-10-22 刪除）
   - n100 主機 — **無任何 DB 備份**（`/data/services/hermes/data` 對 SSH 使用者無權限 → 一律走 `kubectl cp`）
-- [ ] 0.8 確認 `sessions.auto_prune: false`、`_config_version: 51` 未變
+- [x] 0.8 確認 `sessions.auto_prune: false`、`_config_version: 51` 未變
 
 ### Phase A — 建分支 + Purge + 攜帶自訂
 
-- [ ] A0. **Go-Sign 確認** → §0.5 決策 A/B/C/D/E
-- [ ] A1. `git fetch origin refs/tags/v0.22.5:refs/tags/upstream-v0.22.5 --no-tags`（✅ 已完成，commit `bf0203a794a`）
-- [ ] A2. `git checkout -b my-config-v0.22.5 upstream-v0.22.5`
-- [ ] A3. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`
+- [x] A0. **Go-Sign 確認** → §0.5 決策 A/B/C/D/E
+- [x] A1. `git fetch origin refs/tags/v0.22.5:refs/tags/upstream-v0.22.5 --no-tags`（✅ 已完成，commit `bf0203a794a`）
+- [x] A2. `git checkout -b my-config-v0.22.5 upstream-v0.22.5`
+- [x] A3. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`
   ```bash
   find .github/workflows -type f ! -name 'ghcr-publish.yml' -delete
   git checkout my-config-v0.22.4 -- .github/workflows/ghcr-publish.yml
   ```
-- [ ] A4. cherry-pick commit #2 #3 #4 #5 #6 #7（**預期全部零衝突**，merge-tree 已實測）
-- [ ] A5. cherry-pick 10 個歷史文檔 commit（v0.22.2 / v0.22.4 worksheet、upgrade log、post-mortem）
-- [ ] A6. 複驗 `git diff upstream-v0.22.5 HEAD -- Dockerfile | grep -c '^@@'` = **8**
-- [ ] A7. 複驗 Dockerfile 仍含上游 `--cache /opt/hermes/uv-cache` 與 `--record-selection`
-- [ ] A8. **tracked-but-ignored 遺失偵測**（承 v0.22.1 教訓）
+- [x] A4. cherry-pick commit #2 #3 #4 #5 #6 #7（**預期全部零衝突**，merge-tree 已實測）
+- [x] A5. cherry-pick 10 個歷史文檔 commit（v0.22.2 / v0.22.4 worksheet、upgrade log、post-mortem）
+- [x] A6. 複驗 `git diff upstream-v0.22.5 HEAD -- Dockerfile | grep -c '^@@'` = **8**
+- [x] A7. 複驗 Dockerfile 仍含上游 `--cache /opt/hermes/uv-cache` 與 `--record-selection`
+- [x] A8. **tracked-but-ignored 遺失偵測**（承 v0.22.1 教訓）
   ```bash
   comm -23 <(git ls-tree -r my-config-v0.22.4 --name-only | sort -u) \
            <(git ls-tree -r my-config-v0.22.5 --name-only | sort -u) \
     | git check-ignore --stdin --no-index 2>/dev/null
   ```
   期望：**空輸出**
-- [ ] A9. 確認 `git log --oneline upstream-v0.22.5..HEAD` 為**線性**（無 merge commit）
+- [x] A9. 確認 `git log --oneline upstream-v0.22.5..HEAD` 為**線性**（無 merge commit）
 
 ### Phase B — 本地輕量驗證（不做重測 / 不本機 build）
 
-- [ ] B1. `git status` 乾淨
-- [ ] B2. Dockerfile 8 個自訂標記全數存在：`openssh-server` `rsync` `locales` `en_US.UTF-8` `zh_TW.UTF-8` `ssh-keygen -A` `-s /bin/bash` `agent-browser` `edge-tts` `firecrawl` `uv-cache`
-- [ ] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
-- [ ] B4. blob 雜湊比對：`docker/entrypoint-ssh.sh`（自製）、`docker/stage2-hook.sh`、`docker/entrypoint-dispatch.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml` → 應 6/6 SAME
-- [ ] B5. dispatch input 仍為 **`tag_name`**（不是 `tag`）
-- [ ] B6. 確認 `hermes_state_common.py` 的 `SCHEMA_VERSION` = **32**、`FTS_STORAGE_VERSION` = **3**
-- [ ] B7. 確認 config migration 階梯最高 = **51**（`hermes_cli/config_migrations.py`，與 v0.22.4 位元組相同）
-- [ ] B8. 確認 `plugins/delegation/default/plugin.yaml` 存在且 `kind: backend`
-- [ ] B9. 確認 `scripts/write_install_stamp.py` 存在且 CLI 參數不變（我們的 workflow 依賴它）
-- [ ] B10. 確認新 base image 為 `debian:trixie-20261020@sha256:4c252754...`（兩個 FROM 一致）
-- [ ] B11. 確認 `scripts/build/electron-runtime.mjs` 存在（上游 COPY 依賴它）
-- [ ] B12. npm 決策複驗：根 `package-lock.json` 的 `overrides` 仍為空 → 維持「不修」
-- [ ] B13. `.env` 仍在 working tree 且未被刪
+- [x] B1. `git status` 乾淨
+- [x] B2. Dockerfile 8 個自訂標記全數存在：`openssh-server` `rsync` `locales` `en_US.UTF-8` `zh_TW.UTF-8` `ssh-keygen -A` `-s /bin/bash` `agent-browser` `edge-tts` `firecrawl` `uv-cache`
+- [x] B3. `.github/workflows/` 僅 `ghcr-publish.yml`
+- [x] B4. blob 雜湊比對：`docker/entrypoint-ssh.sh`（自製）、`docker/stage2-hook.sh`、`docker/entrypoint-dispatch.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml` → 應 6/6 SAME
+- [x] B5. dispatch input 仍為 **`tag_name`**（不是 `tag`）
+- [x] B6. 確認 `hermes_state_common.py` 的 `SCHEMA_VERSION` = **32**、`FTS_STORAGE_VERSION` = **3**
+- [x] B7. 確認 config migration 階梯最高 = **51**（`hermes_cli/config_migrations.py`，與 v0.22.4 位元組相同）
+- [x] B8. 確認 `plugins/delegation/default/plugin.yaml` 存在且 `kind: backend`
+- [x] B9. 確認 `scripts/write_install_stamp.py` 存在且 CLI 參數不變（我們的 workflow 依賴它）
+- [x] B10. 確認新 base image 為 `debian:trixie-20261020@sha256:4c252754...`（兩個 FROM 一致）
+- [x] B11. 確認 `scripts/build/electron-runtime.mjs` 存在（上游 COPY 依賴它）
+- [x] B12. npm 決策複驗：根 `package-lock.json` 的 `overrides` 仍為空 → 維持「不修」
+- [x] B13. `.env` 仍在 working tree 且未被刪
 
 ### Phase C — 推送 + 建置
 
-- [ ] C1. `git push -u kuniakil my-config-v0.22.5`
-- [ ] C2. dispatch：**`gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.22.5 -f tag_name=v0.22.5 -f platforms=all`**
-- [ ] C3. 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.22.5`、`headSha` = **我方 commit**（絕非 `bf0203a794a`）
-- [ ] C4. `gh run watch` → prepare / linux-amd64 / linux-arm64 / merge 全 success
+- [x] C1. `git push -u kuniakil my-config-v0.22.5`
+- [x] C2. dispatch：**`gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.22.5 -f tag_name=v0.22.5 -f platforms=all`**
+- [x] C3. 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.22.5`、`headSha` = **我方 commit**（絕非 `bf0203a794a`）
+- [x] C4. `gh run watch` → prepare / linux-amd64 / linux-arm64 / merge 全 success
       ⭐ **必須派給背景子代理**（10+ 分鐘），主迴圈不得 blocking
-- [ ] C5. image tags 存在：`v0.22.5`、`latest`
-- [ ] C6. **未 force-push 版本 tag**（發布模型由分支建置，tag 與 build 無關）
-- [ ] C7. 若出現 `HTTP 422 "Actions has been disabled for this repository"` → **停止並走 `/actions` 橫幅重新啟用**（不要重試、 不要清 cache、不要改 settings）
+- [x] C5. image tags 存在：`v0.22.5`、`latest`
+- [x] C6. **未 force-push 版本 tag**（發布模型由分支建置，tag 與 build 無關）
+- [x] C7. 若出現 `HTTP 422 "Actions has been disabled for this repository"` → **停止並走 `/actions` 橫幅重新啟用**（不要重試、 不要清 cache、不要改 settings）
 
 ### Phase D — 部署 + 驗證
 
-- [ ] D1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.22.4"` → `"v0.22.5"`
-- [ ] D2. `kubectl kustomize .` render 正確；`kubectl apply -k` 後 `kubectl rollout status` **successfully rolled out**
-- [ ] D3. 冒煙測試（對照 v0.22.4 基線）：
+- [x] D1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.22.4"` → `"v0.22.5"`
+- [x] D2. `kubectl kustomize .` render 正確；`kubectl apply -k` 後 `kubectl rollout status` **successfully rolled out**
+- [x] D3. 冒煙測試（對照 v0.22.4 基線）：
   - Python 3.14.x + `ruamel.yaml.clib` C 加速可用
   - **Node.js `v26.12.1`**（R2）
   - **Debian base = trixie**（`cat /etc/os-release`）（R3）
@@ -343,24 +343,24 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
   - sshd + rsync + tini + ffmpeg + agent-browser
   - extras（edge-tts 7.3.1 / firecrawl / dingtalk_stream / lark_oapi / exa_py）
   - Telegram connected、**0 ERROR**
-- [ ] D4. **版本確認**：`hermes --version` 應顯示 `v0.22.5` 且 `upstream <我方 commit sha>`
-- [ ] D5. **schema 檢查**：`state.db` `schema_version` 實測仍為 **32**（**不得變 33**）；`session_admissions` / `worker_executions` / `worker_receipts` / `runtime_epoch` 表存在
-- [ ] D6. **資料完整性**：`sessions` / `messages` 計數**不得下降**（基線 127 / 17,702）；`PRAGMA integrity_check` = ok
-- [ ] D7. **🔴 開機驗證**：刪 pod 強制重啟，確認 gateway 在新 PID 下正常啟動、`RESTARTS` 歸零後不迴圈
-- [ ] D8. **🔴 left-core 檢查（R1）**：開機 log **不得**出現 `left-core` / `Installing plugin` / catalog 自動安裝相關訊息；gateway 開機耗時與 v0.22.4 持平
-- [ ] D9. **🔴 delegation 檢查**：`delegate_task` 仍可用（預設 backend 繼承 parent model）；確認 `plugins/delegation/default` 已被發現
-- [ ] D10. **🔴 session 刪除測試**：抽 1 個帶 ledger 歷史的 session 實測 `hermes sessions delete` → 應**能刪**（刪後 `session_admissions` 對應列歸零）
-- [ ] D11. **FTS 檢查**：`state_meta.fts_storage_version` 應**仍不存在**、`fts_optimize_available` = 1；確認**沒有**在 open 時自動重建（`messages_fts` DDL 仍是 `fts5(content)`）
-- [ ] D12. **auto-prune 檢查**：`sessions.auto_prune` 仍為 `false`、`_config_version` 仍 51、**沒有**任何 migration 紀錄被寫入
-- [ ] D13. 部署 60s 後 **0 restart**、log 無 ERROR/Traceback
+- [x] D4. **版本確認**：`hermes --version` 應顯示 `v0.22.5` 且 `upstream <我方 commit sha>`
+- [x] D5. **schema 檢查**：`state.db` `schema_version` 實測仍為 **32**（**不得變 33**）；`session_admissions` / `worker_executions` / `worker_receipts` / `runtime_epoch` 表存在
+- [x] D6. **資料完整性**：`sessions` / `messages` 計數**不得下降**（基線 127 / 17,702）；`PRAGMA integrity_check` = ok
+- [x] D7. **🔴 開機驗證**：刪 pod 強制重啟，確認 gateway 在新 PID 下正常啟動、`RESTARTS` 歸零後不迴圈
+- [x] D8. **🔴 left-core 檢查（R1）**：開機 log **不得**出現 `left-core` / `Installing plugin` / catalog 自動安裝相關訊息；gateway 開機耗時與 v0.22.4 持平
+- [x] D9. **🔴 delegation 檢查**：`delegate_task` 仍可用（預設 backend 繼承 parent model）；確認 `plugins/delegation/default` 已被發現
+- [x] D10. **🔴 session 刪除測試**：抽 1 個帶 ledger 歷史的 session 實測 `hermes sessions delete` → 應**能刪**（刪後 `session_admissions` 對應列歸零）
+- [x] D11. **FTS 檢查**：`state_meta.fts_storage_version` 應**仍不存在**、`fts_optimize_available` = 1；確認**沒有**在 open 時自動重建（`messages_fts` DDL 仍是 `fts5(content)`）
+- [x] D12. **auto-prune 檢查**：`sessions.auto_prune` 仍為 `false`、`_config_version` 仍 51、**沒有**任何 migration 紀錄被寫入
+- [x] D13. 部署 60s 後 **0 restart**、log 無 ERROR/Traceback
 - [ ] D14. 真實訊息往返（Telegram 收 → 模型 → 工具 → 送出）→ **待使用者送一則訊息**
 
 ### Phase E — 收尾
 
-- [ ] E1. 產出 `UPGRADE_LOG_v0.22.4_to_v0.22.5.md`
-- [ ] E2. 在 post-mortem 加入「v0.22.5 是 81 PR 正常 patch 窗口、官方 curated notes 仍延到 v0.23.0」
-- [ ] E3. 本工作表同步實際執行結果（image digest / run id / 實測數字）
-- [ ] E4. `~/kubernetes` kustomization 變更 commit + push
+- [x] E1. 產出 `UPGRADE_LOG_v0.22.4_to_v0.22.5.md`
+- [x] E2. 在 post-mortem 加入「v0.22.5 是 81 PR 正常 patch 窗口、官方 curated notes 仍延到 v0.23.0」
+- [x] E3. 本工作表同步實際執行結果（image digest / run id / 實測數字）
+- [x] E4. `~/kubernetes` kustomization 變更 commit + push
 - [ ] E5. 備份處置：**已提示使用者，等明確同意才刪**（`~/backups/hermes-20261024`）
 
 ---
@@ -414,12 +414,12 @@ git merge-base --is-ancestor upstream-v0.22.4 upstream-v0.22.5  → YES
 
 ## 8. Go-Sign
 
-- [ ] §0.5 決策 **A**：目標版本 = **v0.22.5**
-- [ ] §0.5 決策 **B**：不等 v0.23.0
-- [ ] §0.5 決策 **C**：npm 漏洞 = **維持不修**
-- [ ] §0.5 決策 **D**：FTS layout 漂移 = **本次不處理**
-- [ ] §0.5 決策 **E**：v0.22.4 備份**保留**（不刪）
-- [ ] 使用者回覆「Go」→ Phase 0 → A → B → C → D → E 依序執行
+- [x] §0.5 決策 **A**：目標版本 = **v0.22.5**
+- [x] §0.5 決策 **B**：不等 v0.23.0
+- [x] §0.5 決策 **C**：npm 漏洞 = **維持不修**
+- [x] §0.5 決策 **D**：FTS layout 漂移 = **本次不處理**
+- [x] §0.5 決策 **E**：v0.22.4 備份**保留**（不刪）
+- [x] 使用者回覆「Go」→ Phase 0 → A → B → C → D → E 依序執行
 
 ---
 
@@ -472,3 +472,79 @@ HERMES_DISABLE_LAZY_INSTALLS: （空）
 | Base image | `debian:13.4` | **`debian:trixie-20261020`**（R3） |
 | SSH | sshd + host key（hostPath 掛載） | 不變 |
 | 本機 runtime | **未使用** | 不變 |
+
+---
+
+## 10. 執行結果（2026-10-24 實際跑完）
+
+### 10.1 關鍵實測數據
+
+| 檢查 | 升級前 | 升級後 | 判定 |
+|---|---|---|---|
+| `hermes --version` | `vv0.22.4 … upstream 621915ab` | **`vv0.22.5 … upstream 505335bf`** | ✅ 我方 commit，非官方 `bf0203a79` |
+| `sessions` | 127 | **127** | ✅ 零損失 |
+| `messages` | 17,702 | **17,702** | ✅ 零損失 |
+| `schema_version` | 32 | **32** | ✅ **未變** |
+| `PRAGMA integrity_check` | ok | **ok** | ✅ |
+| `session_admissions` | 2 | 2（測試 session 刪除後歸零） | ✅ |
+| `messages_fts` DDL | `fts5(content)` | **`fts5(content)`** | ✅ 未自動重建 |
+| `fts_storage_version` | 不存在 | **仍不存在** | ✅ 維持 opt-in |
+| `_config_version` | 51 | **51** | ✅ 無 migration 執行 |
+| `sessions.auto_prune` | false | **false** | ✅ |
+| Pod restarts | 0 | **0**（刪 pod 強制重啟後仍 0） | ✅ |
+| 升級後 ERROR level | — | **0** | ✅ |
+| 升級後 Traceback | — | **0** | ✅ |
+| left-core 自動安裝 | — | **0 次** | ✅ R1 不觸發 |
+| Gateway 平台 | telegram + api_server | **telegram ✓ + api_server ✓** | ✅ |
+| Node.js | `v26.7.0` | **`v26.12.1`** | ✅ R2 |
+| Base image | `debian:13.4` | **`debian:trixie-20261020`**（glibc 2.41-12+deb13u4） | ✅ R3 |
+| Python | 3.14.x | `3.14.9` | ✅ 不變 |
+
+### 10.2 自訂層實測（8 個 Dockerfile hunk 全在）
+
+`openssh-server` ✅ `rsync` ✅ `tini` ✅ `/var/run/sshd` ✅ host keys ✅ 3 種 locale ✅ ·
+`hermes` shell = `/bin/bash` ✅ · `/usr/local/bin/agent-browser` → `agent-browser-0.26.0-linux-x64` ✅ ·
+extras（edge-tts / firecrawl / dingtalk_stream / lark_oapi / exa_py）✅ · `ffmpeg` ✅ ·
+`/tmp/.npm-cache` 1777 ✅ · `/root/.npm` `/root/.cache` = `755 hermes:hermes` ✅ · `HOME=/opt/data` ✅ ·
+`/opt/hermes/docker/entrypoint-ssh.sh` ✅ · `ruamel.yaml.clib` CParser ✅
+
+### 10.3 🔴 delegation 機制遷移實測（v0.22.5 新增 pluggable backends）
+
+```
+hermes plugins list → default | enabled | 1.0.0 | bundled
+真實 delegate_task  → 子代理算出 137*23 = 3151（19s / 7 messages）✅
+```
+
+### 10.4 🔴 session 刪除路徑實測
+
+```
+刪除前：sessions=129  messages=17713  admissions(sid)=1
+$ hermes sessions delete --yes local-d79f924493ee63d83c181393f67d7d48983400455ce5606ce89b886bf735a4fd
+刪除後：sessions=127  messages=17702  admissions(sid)=0  integrity=ok
+```
+
+→ 精確回到升級前基線；v0.22.4 的 ledger retirement 路徑在 v0.22.5 未 regress。
+
+### 10.5 `hermes doctor`
+
+4 個 issue，**全部既有**：1 個 API key 提示 + root 1 / web 1 / ui-tui 2 個 npm 議題（與升級前同一組）。
+
+### 10.6 建置與部署
+
+| 項目 | 值 |
+|---|---|
+| GH Actions Run | **40067788285**（prepare / build-and-push amd64 / build-and-push arm64 / merge 全 success） |
+| headSha | `505335bfebd6bdf76ee564ca0a8eb4945109edf0`（我方 commit） |
+| GHCR index digest | `sha256:8fb00e4665e888ed3ce199269355cc0d596e1399f52f148c21403b06b0fb1660` |
+| amd64 manifest | `sha256:9a86a3db598446147a87300a04ae0e854bb866fce641610ccc9d600112f882d8` |
+| arm64 manifest | `sha256:5106ebf26039b25b2a38f7d404e4847354cb13d88ef85c60afe1dce27bc3eddf` |
+| image tags | `v0.22.5` ✅ / `latest` ✅（同一 multi-arch index） |
+| Pod | `hermes-agent-665b4bfd7b-dv54g`（刪 pod 強制重啟後） |
+| 備份 | `~/backups/hermes-20261024/state.db`（176,078,848 bytes，integrity ok） |
+
+### 10.7 剩餘待辦
+
+- [ ] **D14 真實 Telegram 訊息往返**：本地 `hermes chat --oneshot` 已證明 agent turn 正常（delegate_task 端到端 19s），但 Telegram 端需使用者送一則訊息做最終確認。
+- [ ] **備份處置**：`~/backups/hermes-20261024/`（176MB）+ `~/backups/hermes-20261022/`（175MB）— 驗證通過，等使用者明確同意才刪。
+
+> 📌 詳細升級紀錄與 post-mortem 見 `UPGRADE_LOG_v0.22.4_to_v0.22.5.md`。
