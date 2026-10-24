@@ -481,3 +481,77 @@ camofox-mcp.default.svc.cluster.local -> DNS FAIL: gaierror [Errno -2] Name or s
 ② URL 指向不存在的 `camofox-mcp.default` namespace。
 且 OpenClaw 的 `openclaw.json` 內**並無任何 camofox MCP 設定** → 該檔案完全無用。
 （本次未動 OpenClaw deployment；如需清理請另行確認。）
+
+---
+
+## 19. camofox MCP 首次端到端實測（2026-10-24 18:10–18:18，Hermes 側）
+
+> 完整報告：`docs/camofox-mcp-live-test-report.md` · 原始輸出：`docs/camofox-mcp-live-test-report-raw.txt`
+> 提示詞：`docs/camofox-mcp-live-test-prompt.md`
+
+### 19.1 背景
+
+`agent.log` 裡 `mcp__camofox__` 只出現過 6 次，**全部是「registered 49 tool(s)」的註冊 log** →
+camofox MCP 工具在 Hermes 側**從未被真正呼叫過**。本次是第一次端到端實測。
+
+### 19.2 結論
+
+> **camofox 可以用，核心能力完整可用** —— 真實瀏覽、無障礙樹快照、DOM 取用、JavaScript 執行、截圖、結構化抽取、搜尋全部成功。
+> 但 **`get_links` 這個工具是壞的**：它在所有 4 個測試站點都回傳 `href: ""`，連 example.com 那個唯一的 `<a>` 都不例外；
+> 而同一頁面的 HTML、snapshot、`evaluate_js`、`extract_structured` 都能拿到正確 URL → **這是 MCP wrapper 層的欄位名稱錯誤，不是後端問題**。
+
+### 19.3 三個真問題
+
+| # | 問題 | 類別 | 根因（已從上游原始碼驗證，非推測） | 影響 |
+|---|---|---|---|---|
+| **1** | **`get_links` 恆回空 href** | `TOOL_CONTRACT` | camofox-browser `src/services/tab.ts` 的 `getLinks()` 回傳型別是 `Array<{url, text}>`，但 camofox-mcp `src/client.ts:702-705` 讀的是 `item.href ?? ""` → **欄位名不匹配，恆為空字串** | 所有「連結發現」用途失效 |
+| **2** | **`extract_structured` schema 契約未揭露** | `TOOL_CONTRACT` | 工具描述未說明格式，需 5 輪試錯才推導出來（`schema.kind must be "object" or "list"` → `schema.properties is not supported` → `schema.fields.x.type is not supported` → `schema.fields.x must be an object` → `schema.fields.x.kind must be one of text, html, attr, url, or number`）。另 `schema.fields.x.required` 傳 boolean 卻被回報「must be a boolean」 | 浪費 agent 回合，且**會觸發 Hermes MCP circuit breaker**（`MCP server 'camofox' rejected the last 3 calls` → 暫停 49 秒） |
+| **3** | **`navigate` 的 `title` 永遠空字串** | `OTHER`（上游） | camofox-browser `src/routes/core.ts` 的 navigate 路由只回傳 `{ok: true, url}`，沒有 `title` 欄位；camofox-mcp `src/client.ts:350` 讀 `response.title` → `undefined` → `""` | 純輸出欄位缺失；瀏覽器端 `document.title` 經 `evaluate_js` 正常 |
+
+### 19.4 通過的項目
+
+| 工具 | 結果 |
+|---|---|
+| `server_status` | ✅ running / reachable / version 2.4.8 |
+| `get_stats` | ✅ visitedUrls / toolCalls / refsCount / sessionKey |
+| `create_tab` | ✅ tabId + sessionKey（冷啟動 4.7s，後續 1.5s） |
+| `navigate` | ⚠️ url 正確、title 空（見 19.3-3） |
+| `snapshot` | ✅ example.com 完整；Wikipedia **79,912 字元**；HN 30 則 + 226 refs |
+| `camofox_get_page_html` | ✅ 1,974 字元，前 200 字含 `<title>Example Domain</title>` |
+| `camofox_query_selector` | ✅ `p` → text/html/tag/attributes；`a` + attribute=href → 正確 URL；`h1` → exists:false（**經 curl 對照確認 example.com 本身無 h1，非工具錯誤**） |
+| `camofox_evaluate_js` | ✅ `document.title` → "Example Domain"；DOM 探測 h1count:0 / pcount:6 / readyState:complete |
+| `screenshot` | ✅ 83,043 bytes PNG，視覺確認正常渲染 |
+| `extract_structured` | ⚠️→✅ 最終 HN 抽出 30 則標題+絕對 URL（818ms） |
+| `web_search` | ✅ 真實 Google SERP，未遇 CAPTCHA，geo=台灣/新北市土城區 |
+| `list_tabs` / `close_tab` | ✅ 收尾 `[]`、`activeTabCount: 0` |
+
+### 19.5 排除的失敗類別
+
+`NETWORK` 類別**完全排除** —— 全程無 DNS / connection refused / TLS 錯誤。
+MCP 層以 `isError` + `code: INTERNAL_ERROR` 的 JSON-RPC 形式回報錯誤，**不暴露 HTTP status code**。
+
+### 19.6 設計行為（非問題）
+
+- `camofox-browser` 每小時 idle timeout 自我回收（`exitCode 0` / `reason: Completed` / `shutting down signal=IDLE_TIMEOUT`），K8s 再拉起 → 366 次重啟是 ≈24 次/天的**預期行為**
+- 閒置時 `browserConnected:false` / `sessions:0` / `activeTabCount:0` 正常
+- `create_tab` 回 `autoLoaded:false` → 需顯式 navigate，符合工具描述
+- Hermes MCP circuit breaker 暫停 49 秒 → **Hermes 端保護機制**，後端未失效；等待 55 秒後恢復正常
+
+### 19.7 已知上游行為（Hermes 側觀察，供 OpenClaw 側獨立驗證）
+
+1. `get_links` 恆空 href
+2. `navigate` title 恆空
+3. `extract_structured` schema 格式未揭露（正確格式：`{"kind":"object","fields":{"x":{"kind":"url","selector":"a","attr":"href"}}}`）
+
+### 19.8 收尾
+
+測試結束時 Agent 另開了一個驗證用 tab 未關閉 → 已用第二次 Hermes 回合（`docs/camofox-mcp-cleanup-prompt.md`）關閉：
+`287ffdc4-87be-4678-b328-164cbc4c85c3` → `close_tab` 成功 → `list_tabs` = `[]` → `activeTabCount: 0`。**camofox 已回到乾淨閒置態。**
+
+### 19.9 需要人為決策
+
+| # | 事項 | 建議 |
+|---|---|---|
+| 1 | 修 `get_links` | 上游 `camofox-mcp/src/client.ts:702-705` 改讀 `item.url`（一行）。**我們的 image 是 `ghcr.io/redf0x1/camofox-mcp`**，需上游發版或自行 fork。修好前的替代路徑：`snapshot` 的 `/url:`、`camofox_query_selector(attribute=href)`、`extract_structured(kind=url)` |
+| 2 | 要求上游補 `navigate` 的 title | 需改 camofox-browser 的 navigate 路由，非 MCP 端可單獨修 |
+| 3 | `extract_structured` 補 schema 說明 | 建議在工具 description 加上 `kind/fields/selector/kind:text\|html\|attr\|url\|number` 範例，避免 agent 浪費試錯輪次並觸發 circuit breaker |
