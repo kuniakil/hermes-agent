@@ -1,0 +1,49 @@
+## 5. 需要人為決策的事項
+
+1. **【高】screenshot 圖片遺失 — 是否要修、在哪修？**
+   證據鏈完整：camofox MCP 端回的是合法 `image/png`（raw JSON-RPC 與官方 MCP SDK 雙路驗證，base64 230,368 字元），掉圖發生在 OpenClaw 側，**不是 camofox 的問題**。
+   **主要嫌疑**：`<model>.input.includes("image")` 閘門。`@openclaw/ai` 的 `src/transports/anthropic-messages.ts` `convertContentBlocks()`（約 93–120 行）只有在 `profile === "provider" || model.input.includes("image")` 時才保留 image block；本次 session 模型是 **MiniMax-M2.5，`input: ["text"]`（config內 `models.providers.minimax` 定義），無 image 能力**，因此 tool_result內的 image block 被整段丟掉，只剩 media placeholder。
+   **注意**：M3 的 `input` 有 `"image"`，且我已把 session 切到 M3，但切換顯示「live switch pending」，**下一個 turn 才真正生效**，所以還沒驗證過「M3 + screenshot」是否正常。
+   **決策點**：(a) 先用 M3 重測一次確認是不是純 vision閘門造成（成本低，我可以直接執行）；(b) 若確認，是否要我把 `MiniMax-M2.5` 的 `input` 補上 `"image"`（**不建議**，那是 provider 能力宣告，改了會導致送出不被 MiniMax 接受的 image payload）；(c) 或改由 OpenClaw 端對「無 vision 的模型」改走 `view_image` 路徑而非直接 inline；(d) 或把此案轉成 upstream issue。
+
+2. **【中】`fullPage` boolean 被字串化（`-32602`）— 是否算 OpenClaw 的 bug 要修？**
+   原始錯誤：`MCP error -32602: Input validation error: Invalid arguments for tool screenshot: Invalid input: expected boolean, received string at fullPage`
+   錯誤碼 -32602 是 MCP **Invalid params**，代表**參數在傳到 server 前就被 OpenClaw 轉成了字串**（`"true"`），不是 camofox 拒收合法 boolean。這是 OpenClaw tool-call 橋接層的型別處理問題，會影響**所有需要 boolean/數字型別的 MCP 工具**，不只是 screenshot。建議開 upstream issue，並在 workaround 層面先一律省略 optional boolean。
+
+3. **【中】`extract_structured` 的真實 schema 要不要正式公告？**
+   Hermes 與我一致確認「schema 契約沒寫在工具描述裡，只能試錯」。這是**上游 camofox 契約缺失**，不是 OpenClaw 問題。但我們已經反推出可用契約（§3.3），建議：
+   - 短期：把正確寫法（`kind:"list"` + 頂層 `selector` + `item` 物件）寫進本地 skill（`~/.openclaw/agents/main/agent/workshop-skills/camofox-browser/SKILL.md`）與 MEMORY.md 的速查條目，避免下次再試錯。
+   - 長期：向 camofox 上游回報「schema 未寫在 tool description」＋建議補 JSON Schema 定義。同時建議回報 `get_links` href 空值與 `navigate`/`list_tabs` title 空值兩個靜默錯誤。
+
+4. **【中】`get_links` 這種靜默失敗的工具要怎麼處置？**
+   `get_links` 每次都「成功」但 92/92 筆 `href:""`，不報錯。這種**靜默錯誤比明確報錯更危險**（下游 AI會誤以為該頁沒有連結）。決策點：(a) 在 skill 裡明文標註 `get_links` 不可用、改走 `camofox_query_selector`（`attributes.href`）或 `extract_structured`(`kind:"url"`+`attr:"href"`)；(b) 向 camofox 上游回報；(c) 在 OpenClaw 端加一層「`get_links` 回空 href 時主動告警」的啟發式。
+
+5. **【低】`get_stats` 強制要求 `tabId`，與「session statistics」描述不符。**
+   工具描述是「Get session statistics: request counts, active tabs, uptime, performance metrics」，但 JSON Schema 把 `tabId` 列為 `required`，導致**開 tab 之前無法取得全域 stats**（本次第 2 項因此延後到建 tab 後才做，量到的是 per-tab 視角：`visitedUrls:["https://example.com/"], toolCalls:8`與 `remote.toolCalls:6`）。建議回報上游釐清，或確認 `tabId` 是否應為 optional。
+
+6. **【低】`list_tabs` 描述宣稱回 titles，實際無 `title` 欄位。**
+   與 `navigate` 的空 title 疑似同一條上游欄位路徑未實作。建議與第 3 點一併回報。
+
+7. **【流程】本次沒有成功示範到一次 `close_tab`。**
+   原始錯誤：`{"isError":true,"code":"TAB_NOT_FOUND","message":"Tab 'aa1febf6-3929-46c5-ac79-db8905f4aa94' is not tracked. Create or list tabs first."}`
+   依既定說明，`camofox-browser` pod 約每小時 idle 自收屬**設計行為**（`exitCode 0`），不是問題，所以本次**未取得成功 close_tab 的實測證據**。若 Michael 認為需要補測，可在1 小時 idle 窗口內重跑「開 tab → list → close → list」以取得正例。要不要補跑由你決定。
+
+---
+
+## 6. 本次測試的侷限
+
+1. **只有單一 client視角。** 所有結論來自 OpenClaw（Gateway pod內、MiniMax-M2.5/切 M3 pending）。Hermes 端結論是本次的對照組，我沒有從 Hermes 側重新執行任何一行，所以「兩邊一致」是**基於既有報告 + 我方獨立觀察比對**，不是雙向重現。
+
+2. **screenshot 的圖片遺失根因尚未定案。** 我以 raw JSON-RPC 與官方 MCP SDK client 雙路確認 camofox 端有回合法 PNG，但 OpenClaw 內部的**確切丟失節點未經 runtime 插樁確認**——「模型無 vision 導致」是目前最強假說（`anthropic-messages.ts` `convertContentBlocks()` 的 `model.input.includes("image")` 閘門 + M2.5 為 text-only），但**尚未用 M3 實際驗證反證**。另外為了定位而動用了 `exec`（讀 openclaw.json 取 Bearer、跑 SDK client、比對 `/app/dist` 與 `@openclaw/ai` 原始碼），這些是**診斷性**手段、非 MCP 工具測試本身，所有功能判定仍以 MCP 工具回傳為準。
+
+3. **每項耗時未被逐項量測。** 表中「耗時」欄只有 `extract_structured` 回傳的 server 端 `extractionTimeMs`（19 / 27 / 31 / 32 / 37 / 349 / 449 ms）是真實數值；其餘欄位標記為「未單獨量測」，因為同一回合內批次並行發送、未做 per-call 計時。總測試窗約 55 分鐘（18:25–19:20），但**不可據此推算單次呼叫延遲**。
+
+4. **抽樣站點有限。** 僅 example.com、en.wikipedia.org/wiki/Hermes、news.ycombinator.com、google.com/search 四個站。**未測**任何需要反指紋偵測的高防護站（Shopee/DataDome、X.com搜尋、Cloudflare challenge頁），也未測 JS-heavy SPA 的 hydration 等待、檔案下載、cookie/session 持久化、代理與 geo preset 參數。故**不能推論 camofox 在防護站上的可用性**。
+
+5. **extract_structured 的契約僅覆蓋少數組合。** 實測過 `kind:"object"`+`fields`、`kind:"list"`+`item`、欄位 `kind` 為 `url`/`text`；**未實測** `html`/`attr`/`number` 三種欄位 kind、`kind:"list"` 搭配多欄位、以及 `attr` 在 `kind:"url"` 與 `kind:"attr"` 間的差異（本次 `kind:"url"` 帶 `attr:"href"` 有效，但 `kind:"attr"` 的行為未驗）。
+
+6. **只開過一個 tab，只用過一組 userId/sessionKey。** 全部測試都用 `userId:"cli-default"` / `sessionKey:"default"`（與 camofox CLI 預設 context 共用）。**未測**獨立 userId 隔離、多 tab 並行、viewport/preset/timezone/locale/geolocation 參數、proxy 參數。另外 `create_tab` 回 `autoLoaded:false`，我**未驗證**帶 url 建 tab 與「先建空 tab 再 navigate」的行為是否等價。
+
+7. **未觸碰任何被禁止的 API。** 全程未呼叫 `delete_profile` / `save_profile` / `load_profile` / `import_cookies` / `delete_download` / `batch_download` / `camofox_close_session`；未修改任何 config、檔案或 k8s 資源。唯一寫入動作是 `exec` 內的唯讀讀取（openclaw.json、原始碼、比對）。**副作用殘留**：`session_status` 把本 session 的模型 override 改成了 `minimax/MiniMax-M3`（尚未生效，顯示 pending）；若不需要，請用 `/model default` 或 `session_status model=default` 清除。
+
+8. **未驗證 provider 端最終送出的 payload。** 我讀了 `@openclaw/ai` 的原始碼來推斷 image block 的處理，但**沒有抓到實際送給 MiniMax API 的 HTTP body**。因此「M3 能解決 screenshot」仍屬推測，需實測確認。

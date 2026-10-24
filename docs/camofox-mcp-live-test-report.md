@@ -239,3 +239,16 @@ D. camofox_query_selector("h1") 回傳 exists:false
 ────────────────────────────────────────
 
 ⚠ Iteration budget reached (50/50) — response may be incomplete
+
+---
+
+> 🔧 **2026-10-24 更正（由第三方 raw JSON-RPC 驗證 + OpenClaw 側獨立觀察交叉確認）**
+>
+> 本報告 §2 表格第 5 項「snapshot → 含 'Example Domain'（位於 `<title>`，非 h1）」**有誤**。
+> a11y snapshot 取的是可及性樹，**不含 `<title>` 的文字**。實測：
+> `snapshot` → 只有 6 個多語段落 + `link "Learn more" [e1]` / `/url: https://iana.org/help/example-domains`；
+> "Example Domain" 只出現在 **原始 HTML 的 `<title>`** 與 **`document.title`**（`evaluate_js`）。
+>
+> 更正後本報告的 snapshot 判定應為「✅ 內容正確，但不含 'Example Domain' 字樣」。
+> 其餘結論（get_links 恆空 href、navigate title 恆空、extract_structured 契約未公開、screenshot 正常、web_search 正常、close_tab 成功）**經三方交叉驗證均成立**。
+> 完整交叉比對見 `docs/camofox-mcp-cross-agent-test-report.md` §3。
