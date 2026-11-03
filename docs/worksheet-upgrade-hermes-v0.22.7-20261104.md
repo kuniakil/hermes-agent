@@ -255,6 +255,35 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
 - [x] D2. 執行 `kubectl apply -k ~/kubernetes/hermes/overlays/n100`，監控 rollout 成功
   - ✅ apply 結果：`namespace/hermes unchanged`、`secret/secrets-env unchanged`、`service/hermes-agent unchanged`、**`deployment.apps/hermes-agent configured`**、`ingressroutetcp.traefik.io/hermes-ssh-ingress unchanged`
   - ⏳ rollout 由背景子代理監控中
+  - ✅ **rollout 成功**：新 pod `hermes-agent-58b98d987d-5nhh7`，`Running` / `ready=true` / `RESTARTS 0`
+    - 實際 image：`ghcr.io/kuniakil/hermes-agent:v0.22.7`（digest `sha256:4ae8d02db0670f87fa9fcb3d06214e77c1a394405093f36d1755d27024172309`）
+    - Deployment：`updated=1/1 ready=1 avail=1`（conditions: `Available=True` / `Progressing=True`）
+    - Image pull 耗時 1m42.9s（image ~1.16GB）；舊 pod `hermes-agent-5f74db767c-x4d7c` 已 Terminating 並移除
+    - hostPath PVC `/data/services/hermes/data` 持續掛載於 `/opt/data`（DB 未遺失）
+- [x] D3. 冒煙測試（對照 v0.22.6 基線）：**全部通過**
+  - Python `3.14.9` ✅、`openai 2.54.0` ✅、`pydantic 2.14.1` ✅、**`nemo_relay 0.11.0` ✅（本次唯一升版的套件）**
+  - Node.js `v26.12.1` ✅、npm `12.0.2` ✅
+  - Debian base = `13.7 (trixie)` ✅
+  - 3 種 locale（`C.utf8` / `en_US.utf8` / `zh_TW.utf8`）全在 ✅
+  - `sshd` `/usr/sbin/sshd` ✅、`rsync` ✅、`tini` ✅、`tmux` ✅、`ffmpeg` ✅
+  - Chromium binary 存在：`/opt/hermes/tools/chromium-1208/chrome-linux64/chrome` ✅
+  - Telegram connected ✅、**0 ERROR / 0 CRITICAL** ✅
+- [x] D4. **版本確認**：✅ 實測 **`Hermes Agent vv0.22.7 (2026.9.24) · upstream caa90cb9`**（`upstream` 後綴為我們的 commit `caa90cb95e83`，非上游 `b200f5bc60`）
+- [x] D5. **DB Schema 檢查**：✅ `PRAGMA integrity_check` = **`ok`**；`SCHEMA_VERSION = 32` / `FTS_STORAGE_VERSION = 3` 零變更（`hermes_state*.py` 與 `config_migrations*.py` 對上游 diff = **0 行**）
+- [x] D6. **資料完整性**：✅ `sessions = 132`（= 基線）、`messages = 18,031`（= 基線）、`session_admissions = 9`、`worker_executions = 0`、`worker_receipts = 0` —— **零損失**
+- [x] D7. **Config 驗證**：✅ `/opt/data/config.yaml` 的 `_config_version` 維持 **52**（無遷移）；`terminal.backend: local`、`toolsets: [hermes-cli]`、`security.allow_lazy_installs: true`、`sessions.auto_prune: false` 皆原樣；`mcp_servers.camofox` 原封不動（`url: http://camofox-mcp.camofox.svc.cluster.local:8080/mcp`）
+  - `_left_core_used` 未出現於 config（與 v0.22.6 一致；`left_core_migration.py` 對上游零 diff）
+- [x] D8. **開機與穩定性驗證**：✅ `RESTARTS = 0`（`startedAt=2026-11-03T23:35:33Z`）
+  - Gateway 開機 log（`/opt/data/logs/gateway.log`）自 `07:35:47` 起共 **2,430 行**
+  - ✅ `✓ telegram connected`（`Telegram polling confirmed healthy: getUpdates progressing`）、`✓ api_server connected`、`Gateway running with 2 platform(s)`、`Channel directory built: 1 target(s)`
+  - ✅ `kanban dispatcher: embedded in gateway`、`Cron scheduler will tick 1 profile(s): ['default']`、`Model context warmed: MiniMax-M3 -> 1000000 tokens`
+  - ✅ **ERROR = 0、CRITICAL = 0**；WARNING = 3，皆為 Telegram adapter 的良性訊息（DNS-over-HTTPS fallback 探索 ×1、`Connecting to Telegram (attempt 1/8)` ×1、`Connected to Telegram (polling mode)` ×1）
+  - 舊 Pod 關閉為 graceful：`Shutdown phase: all adapters disconnected at +1.94s` → `Previous gateway exited cleanly — skipping session suspension`
+- [x] D9. **Camofox MCP 驗證**：✅ `mcp_servers.camofox` 端口 8080 正常通訊
+  - DNS 解析正常 → `10.43.250.235`
+  - 未帶 token 的 GET → `HTTP 401`（端點存活，正確要求 Authorization）
+  - 帶 `Authorization: Bearer …` 的 MCP `initialize` JSON-RPC → **`HTTP 200`**，`serverInfo: {"name":"camofox-mcp","version":"1.16.0"}`，capabilities 含 `tools` + `prompts`
+- [ ] D10. 真實 Telegram 訊息往返驗證 — ⏳ **待使用者實測**（與 v0.22.6 升級同樣由使用者於 Telegram 端發訊並回報；升級後目前 `messages` 仍為 18,031，尚無新流量）
 - [ ] D3. 冒煙測試（對照 v0.22.6 基線）：
   - Python `3.14.9` + `openai 2.54.0` + `pydantic 2.14.1` + `nemo-relay 0.11.0`
   - Node.js `v26.12.1` + npm `12.0.2`
