@@ -259,13 +259,13 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.5 upstream-v0.22.6 my-co
 - [x] D7. **Config v52 遷移驗證**：`/opt/data/config.yaml` 的 `_config_version` 順利升為 **52**；`mcp_servers.camofox` 原封不動；`_left_core_used: None`
 - [x] D8. **Left-Core 開機驗證**：gateway 開機 log 無自動下載/安裝 plugin；`RESTARTS = 0`
 - [x] D9. **Delegation 與 Camofox MCP 驗證**：`mcp_servers.camofox` 端口 8080 正常通訊（HTTP 405 Method Not Allowed 握手成功）
-- [ ] D10. 真實 Telegram 訊息往返驗證（待使用者實測回報）
+- [x] D10. 真實 Telegram 訊息往返驗證（✅ 使用者於 2026-11-03 09:45 實測回報通過，messages 18,023 → 18,029，44 項 API 全通，30 active tools）
 
 ### Phase E — 收尾與文件歸檔
 
 - [x] E1. 更新本工作表所有 checkbox 與實測數據
-- [ ] E2. Commit 並推送 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`
-- [ ] E3. 彙整證據向使用者報告，並**詢問是否刪除舊備份 `~/backups/hermes-20261024/`（176MB）**（收到明確同意才刪）
+- [x] E2. Commit 並推送 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`（Commit `045d005`）
+- [x] E3. 產出 `UPGRADE_LOG_v0.22.5_to_v0.22.6.md`，並依使用者授權刪除舊備份 `~/backups/hermes-20261024/`（保留 `hermes-20261103/`）
 
 ---
 
