@@ -178,59 +178,83 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
 
 ### Phase 0 — 停機前盤點 + 備份（MANDATORY）
 
-- [ ] 0.1 確認無使用中：查 24h 內訊息數與最後一則時間（預檢：`msgs_24h = 8`，最後一則為 `2026-11-03 09:46:06`）
-- [ ] 0.2 記錄升級前基線（部署後不得下降）：
-  - **2026-11-04 預檢基線**：`sessions = 132`、`messages = 18,031`、`state.db = 176.0MB`、`integrity = ok`
+- [x] 0.1 確認無使用中：查 24h 內訊息數與最後一則時間（**實測：`msgs_24h = 8`，最後一則為 `2026-11-03 09:46:06`（台北）／`01:46:06 UTC`**，與預檢一致）
+- [x] 0.2 記錄升級前基線（部署後不得下降）：
+  - **2026-11-04 實測基線**：`sessions = 132`、`messages = 18,031`、`state.db = 184,508,416 B (176.0MB)`、`integrity = ok`
   - `session_admissions = 9`、`worker_executions = 0`、`worker_receipts = 0`
-- [ ] 0.3 記錄 FTS 現況（維持 opt-in，本次不動）
-- [ ] 0.4 記錄 config 基線：`_config_version: 52`、`terminal.backend: local`、`sessions.auto_prune: false`、`security.allow_lazy_installs: true`、`toolsets: [hermes-cli]`、`mcp_servers.camofox` 存在
-- [ ] 0.5 **備份 DB（`.db` + `.db-wal` + `.db-shm`，缺一不可）**：建立於 `~/backups/hermes-20261104/`
-- [ ] 0.6 驗證備份完整性：`sqlite3 ~/backups/hermes-20261104/state.db "SELECT COUNT(*) FROM messages; PRAGMA integrity_check;"` → 確認 `18031` + `ok`
-- [ ] 0.7 盤點既有備份並記錄：
+  - Pod：`hermes-agent-5f74db767c-x4d7c`，`Running`，`RESTARTS 0`，`age 22h`，建立於 `2026-11-03T01:04:22Z`
+- [x] 0.3 記錄 FTS 現況（維持 opt-in，本次不動）— `FTS_STORAGE_VERSION = 3` 於 v0.22.6 / v0.22.7 皆相同
+- [x] 0.4 記錄 config 基線：**實測 `_config_version: 52`**、`terminal.backend: local`、`sessions.auto_prune: false`、`security.allow_lazy_installs: true`、`toolsets: [hermes-cli]`、`mcp_servers.camofox`（`http://camofox-mcp.camofox.svc.cluster.local:8080/mcp`）存在
+- [x] 0.5 **備份 DB（`.db` + `.db-wal` + `.db-shm`，缺一不可）**：建立於 `~/backups/hermes-20261104/`
+  - 前置：於 Pod 內執行 `PRAGMA wal_checkpoint(TRUNCATE)` → `(0,0,0)`，將 WAL 併入主檔並清空 `-wal`（與 20261103 備份格式一致）
+  - 傳輸：`kubectl cp` 傳 176MB 時 websocket 中斷（`close 1006 / unexpected EOF`），改用 **tar streaming**（`kubectl exec -- tar -cf - -C /opt/data …`）成功
+  - 產物：`state.db`（184,508,416 B）、`state.db-wal`（0 B）、`state.db-shm`（32,768 B）、`config.yaml`（額外保留）
+- [x] 0.6 驗證備份完整性：`sqlite3 ~/backups/hermes-20261104/state.db "SELECT COUNT(*) FROM messages; PRAGMA integrity_check;"` → **實測 `18031` + `132`（sessions）+ `ok`** ✅
+- [x] 0.7 盤點既有備份並記錄：
   - 本機 `~/backups/hermes-20261103/`（v0.22.6 升級快照，176MB）— 暫留，待 Phase E 驗證通過後請示使用者是否清理
+  - 另見 `~/backups/immich-20261016/`（與本次無關）
 
 ### Phase A — 建立分支 + Purge Workflows + 移植自訂 Commits
 
-- [ ] A0. **取得使用者 Go-Sign**（確認 §0.5 決策 A/B/C/D/E）
-- [ ] A1. `git fetch origin refs/tags/v0.22.7:refs/tags/upstream-v0.22.7 --no-tags`（✅ 已完成，commit `b200f5bc60e`）
-- [ ] A2. `git checkout -b my-config-v0.22.7 upstream-v0.22.7`
-- [ ] A3. Purge 官方 workflows，僅保留 `ghcr-publish.yml`：
+- [x] A0. **取得使用者 Go-Sign**（確認 §0.5 決策 A/B/C/D/E）— ✅ 2026-11-04 收到「go」，A–E 全部採納建議方案
+- [x] A1. `git fetch origin refs/tags/v0.22.7:refs/tags/upstream-v0.22.7 --no-tags`（✅ 已完成，commit `b200f5bc60e31588ba2cb60e288029c4a54ba5fa` — 實測 `git rev-parse upstream-v0.22.7^{commit}` 一致）
+- [x] A2. `git checkout -b my-config-v0.22.7 upstream-v0.22.7` — ✅ 分支建立於 `b200f5bc60`
+- [x] A3. Purge 官方 workflows，僅保留 `ghcr-publish.yml`：
   ```bash
   find .github/workflows -type f ! -name 'ghcr-publish.yml' -delete
   git checkout my-config-v0.22.6 -- .github/workflows/ghcr-publish.yml
   git add .github/workflows
   git commit -m "chore(ci): purge official CI workflows; retain only ghcr-publish.yml"
   ```
-- [ ] A4. Cherry-pick 基礎與 Docker 自訂 commits：`c13e99d786`..`5fa1cbc332`（共 6 個核心自訂 commits）
-- [ ] A5. 確認 `git diff upstream-v0.22.7 HEAD -- Dockerfile | grep -c '^@@'` = **7**
-- [ ] A6. Cherry-pick `a77f3f6ff1`..`7f32837c65`（23 個歷史文檔 commits）並提交本工作表 `docs/worksheet-upgrade-hermes-v0.22.7-20261104.md`
-- [ ] A7. **tracked-but-ignored 遺失偵測**：確認 `git diff upstream-v0.22.6..my-config-v0.22.6 --name-only` 與 `git diff upstream-v0.22.7..my-config-v0.22.7 --name-only` 除新增之 v0.22.7 工作表與上游刪減之 workflow 外完全一致
-- [ ] A8. 確認 `git log --oneline upstream-v0.22.7..HEAD` 完全線性（無 merge commit）
+  - 實測：上游 **58 個** workflow → 保留 **1 個**（`ghcr-publish.yml`）。commit `04138723b9`（59 files changed, +154 / −13,567）
+  - 📌 **額外移除 `.github/workflows/README.md`**：v0.22.7 新增的 611 行官方 CI 說明文件，內容描述 57 個已被 purge 的 workflow，對本分支已失真 → 隨 purge 一併刪除
+- [x] A4. Cherry-pick 基礎與 Docker 自訂 commits：`c13e99d786`..`5fa1cbc332`（6 個核心自訂 commits）— ✅ **全部零衝突**
+- [x] A5. 確認 `git diff upstream-v0.22.7 HEAD -- Dockerfile | grep -c '^@@'` = **7** — ✅ 實測 **7**；自訂標記全數存在（`openssh-server` / `rsync` / `useradd -u 10000` / `--extra edge-tts` / `firecrawl` / `dingtalk` / `feishu` / `exa` / `/tmp/.npm-cache` / `ENV HOME=/opt/data` / `entrypoint-ssh.sh`）
+- [x] A6. Cherry-pick `a77f3f6ff1`..`7f32837c65`（23 個歷史文檔 commits）並提交本工作表 — ✅ 零衝突；本工作表 commit `caa90cb95e`
+- [x] A7. **tracked-but-ignored 遺失偵測**：✅ 實測 `old=89 / new=91` 檔，**LOST = 0 檔**；差異僅為新增的 v0.22.7 工作表與上游新增但隨 purge 移除的 `README.md`
+- [x] A8. 確認 `git log --oneline upstream-v0.22.7..HEAD` 完全線性（無 merge commit）— ✅ **merge commits = 0**，自訂 commits 合計 **31**（1 purge + 6 core + 23 docs + 1 worksheet）
 
 ### Phase B — 本地輕量驗證（嚴禁跑重型測試或本機 docker build）
 
-- [ ] B1. `git status` 乾淨
-- [ ] B2. Dockerfile 7 個自訂標記全數存在
-- [ ] B3. `.github/workflows/` 僅有 `ghcr-publish.yml`
-- [ ] B4. 驗證關鍵檔案完整性：`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`docker/profile-hermes-path.sh`、`docker-compose.yml`、`AGENTS.md`、`ghcr-publish.yml`
-- [ ] B5. 確認 `ghcr-publish.yml` dispatch input 為 **`tag_name`**
-- [ ] B6. 確認 `hermes_state_common.py` 的 `SCHEMA_VERSION = 32`、`FTS_STORAGE_VERSION = 3`
-- [ ] B7. 確認 `hermes_cli/config_migrations.py` 最高版本為 **52**
-- [ ] B8. 確認 `.env` 仍在 working tree 且未被 git track
+- [x] B1. `git status` 乾淨 — ✅ 工作區無未提交變更
+- [x] B2. Dockerfile 7 個自訂標記全數存在 — ✅ 見 A5
+- [x] B3. `.github/workflows/` 僅有 `ghcr-publish.yml` — ✅
+- [x] B4. 驗證關鍵檔案完整性：✅ 全數存在 — `docker/entrypoint-ssh.sh` (13) / `docker/stage2-hook.sh` (874) / `docker/profile-hermes-path.sh` (14) / `docker-compose.yml` (19) / `AGENTS.md` (175) / `.github/workflows/ghcr-publish.yml` (154) / `.env.example` (559)
+- [x] B5. 確認 `ghcr-publish.yml` dispatch input 為 **`tag_name`** — ✅ 實測 `tag_name`（description: `Image tag name (e.g. v2026.8.13)`）+ `platforms`（choice: all/amd64/arm64）
+- [x] B6. 確認 `hermes_state_common.py` 的 `SCHEMA_VERSION = 32`、`FTS_STORAGE_VERSION = 3` — ✅ 實測 `hermes_state_common.py:289` = 32、`:312` = 3
+- [x] B7. 確認 `hermes_cli/config_migrations.py` 最高版本為 **52** — ✅ 實測 `MIGRATIONS` 註冊表末項為 `(52, migrate_to_52)`
+- [x] B8. 確認 `.env` 仍在 working tree 且未被 git track — ✅ 本機 `.env`（51 B）存在、`git ls-files` 不含 `.env`、`.gitignore:17` 規則命中；Pod 內 `/opt/data/.env`（997 B / 14 行）由 PVC 管理
+
+### B9 — 補充驗證（worksheet §1.2 機器可讀斷言覆核）
+
+- [x] B9.1 `nemo-relay` → ✅ `pyproject.toml` 為 `nemo-relay>=0.11,<0.12`；`uv.lock` 解析為 **`0.11.0`**
+- [x] B9.2 Base image → ✅ `Dockerfile` 兩個 `FROM` 皆為 `debian:trixie-20261020@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308`（與 v0.22.6 相同）
+- [x] B9.3 `requires-python` → ✅ `>=3.11,<3.15`（未變）
+- [x] B9.4 前端圖表渲染 → ✅ `apps/desktop/package.json` 為 `"pele": "1.13.0"`；`package.json` 已無 `mermaid`
+- [x] B9.5 **上游零 Docker 變更** → ✅ `git diff upstream-v0.22.6 upstream-v0.22.7 -- Dockerfile docker/` = **0 行**（實錘 R1：自訂層 100% 零衝突）
 
 ### Phase C — 推送 Fork + 觸發 GHCR Build
 
-- [ ] C1. 推送分支至個人 fork：`git push -u kuniakil my-config-v0.22.7`
-- [ ] C2. 手動觸發 workflow：`gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.22.7 -f tag_name=v0.22.7 -f platforms=all`
-  - ⚠️ 若遇 `HTTP 422 "Actions has been disabled for this repository"`，立即停止並請使用者至 `https://github.com/kuniakil/hermes-agent/actions` 點擊橫幅重新啟用（Hard Rule 8）
-- [ ] C3. 驗證觸發的 run：`event=workflow_dispatch`、`headBranch=my-config-v0.22.7`、`headSha=<our_head_sha>`
-- [ ] C4. **派背景子代理監控 `gh run watch <run_id> --repo kuniakil/hermes-agent`**（遵守 Hard Rule 9 / `delegate-long-tasks`）
-- [ ] C5. 驗證 multi-arch image tags 產出：`ghcr.io/kuniakil/hermes-agent:v0.22.7` 與 `latest`（雙架構 manifest OK）
+- [x] C1. 推送分支至個人 fork：`git push -u kuniakil my-config-v0.22.7` — ✅ `[new branch] my-config-v0.22.7 -> my-config-v0.22.7`
+- [x] C2. 手動觸發 workflow：`gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.22.7 -f tag_name=v0.22.7 -f platforms=all`
+  - ✅ **無 422**（Hard Rule 8 未觸發）；run URL → `https://github.com/kuniakil/hermes-agent/actions/runs/41738542075`
+  - `gh auth status`：`kuniakil`（GH_TOKEN），scopes 含 `workflow` ✅
+- [x] C3. 驗證觸發的 run：✅ 實測 `event=workflow_dispatch`、`headBranch=my-config-v0.22.7`、`headSha=caa90cb95e83dd28ac9bb7da87419b8f9e8652e0`（= 本地 HEAD，**非**上游 `b200f5bc60`）、`createdAt=2026-11-03T23:21:47Z`
+- [x] C4. **派背景子代理監控 `gh run watch <run_id> --repo kuniakil/hermes-agent`**（遵守 Hard Rule 9 / `delegate-long-tasks`）— ✅ 已派唯讀監控子代理，45 分鐘逾時上限，主迴圈不阻塞
+- [x] C5. 驗證 multi-arch image tags 產出：✅ `ghcr.io/kuniakil/hermes-agent:v0.22.7` 與 `latest` 皆為 **multi-arch index**（`application/vnd.oci.image.index.v1+json`）
+  - `linux/amd64` → `sha256:be4d40c45528cdef83cd35fa526cbe351edf6358fb24c12818462476e947894a`
+  - `linux/arm64` → `sha256:ca2e2d1d8f694d7ab1cba83d3ff11c1f7d814ec61c4c82e4df31c7747051308e`
+  - 另有 `unknown/unknown` = buildx 的 attestation/provenance manifest（正常附屬項）
+  - Build 耗時 **~10m51s**（`23:21:47Z → 23:32:38Z`）；jobs：prepare / amd64 / arm64 / merge 全部 success
+  - **建置日誌實錘 7 個自訂層全部進入 image**：apt + `openssh-server`/`rsync`/`locales` + `ssh-keygen -A` + `C.UTF-8`/`en_US.UTF-8`/`zh_TW.UTF-8` locale-gen、`useradd -u 10000 -m -d /opt/data`、`pm.build_env --extra edge-tts --extra firecrawl --extra dingtalk --extra feishu --extra exa`、`install-stamp` 寫入 `caa90cb95e83 (my-config-v0.22.7)`— ⏳ 由監控子代理驗證中
 
 ### Phase D — K3s 部署 + 全方位驗證
 
-- [ ] D1. 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.22.7"`
-- [ ] D2. 執行 `kubectl apply -k ~/kubernetes/hermes/overlays/n100`，監控 rollout 成功
+- [x] D1. 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.22.6"` → **`"v0.22.7"`** ✅
+  - 已 commit + push 至 `~/kubernetes`（Mac 為唯一編輯來源）：commit `d703648`，`9b55908..d703648 main -> main`
+- [x] D2. 執行 `kubectl apply -k ~/kubernetes/hermes/overlays/n100`，監控 rollout 成功
+  - ✅ apply 結果：`namespace/hermes unchanged`、`secret/secrets-env unchanged`、`service/hermes-agent unchanged`、**`deployment.apps/hermes-agent configured`**、`ingressroutetcp.traefik.io/hermes-ssh-ingress unchanged`
+  - ⏳ rollout 由背景子代理監控中
 - [ ] D3. 冒煙測試（對照 v0.22.6 基線）：
   - Python `3.14.9` + `openai 2.54.0` + `pydantic 2.14.1` + `nemo-relay 0.11.0`
   - Node.js `v26.12.1` + npm `12.0.2`
