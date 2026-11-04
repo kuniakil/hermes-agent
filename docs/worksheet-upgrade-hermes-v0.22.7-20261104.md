@@ -6,7 +6,7 @@
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork（⚠️ 與 OpenClaw 相反）
 - **發布模型**：`my-config-v0.22.7` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.22.7`
 - **目前上線版本**：`v0.22.6`（K3s n100，pod `hermes-agent-5f74db767c-x4d7c`，running，RESTARTS 0）
-- **狀態**：⏸️ **規劃完成，等待使用者 Go-Sign**
+- **狀態**：✅ **升級完成並通過線上全面檢查**（2026-11-04）
 - **日期**：2026-11-04
 
 ---
@@ -283,7 +283,11 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
   - DNS 解析正常 → `10.43.250.235`
   - 未帶 token 的 GET → `HTTP 401`（端點存活，正確要求 Authorization）
   - 帶 `Authorization: Bearer …` 的 MCP `initialize` JSON-RPC → **`HTTP 200`**，`serverInfo: {"name":"camofox-mcp","version":"1.16.0"}`，capabilities 含 `tools` + `prompts`
-- [ ] D10. 真實 Telegram 訊息往返驗證 — ⏳ **待使用者實測**（與 v0.22.6 升級同樣由使用者於 Telegram 端發訊並回報；升級後目前 `messages` 仍為 18,031，尚無新流量）
+- [x] D10. 真實 Telegram 訊息往返驗證 — ✅ **使用者於 2026-11-04 08:04 CST 於 Telegram 端實測回報通過**
+  - 使用者回報：`messages` 18,031 → **18,042**（+13）、`sessions` → 133、`messages_fts` = 18,042 = messages、triggers 13、admissions 11、integrity ok、44 項 API 全通、30 active tools、22 skills、cron/jobs 無 job、磁碟 1.8T/30%、記憶體 15Gi available
+  - **2026-11-04 全天 ERROR: 0 筆**；部署後（07:35:33 之後）ERROR: 0 筆（比上次乾淨 —— 11/03 有 4 筆 Telegram CLOSE-WAIT 網路抖動）
+  - 主代理獨立覆核：`messages` **18,044**、`sessions` 133、`messages_fts` = 18,044 = messages、`integrity = ok`、ERROR/CRITICAL = 0、`RESTARTS = 0`
+  - 使用者 bot 報告中的合理保留意見（已採納）：pod 當時僅運行約 29 分鐘，尚不足以作為「新版已穩定運行」的長期證據
 - [ ] D3. 冒煙測試（對照 v0.22.6 基線）：
   - Python `3.14.9` + `openai 2.54.0` + `pydantic 2.14.1` + `nemo-relay 0.11.0`
   - Node.js `v26.12.1` + npm `12.0.2`
@@ -302,9 +306,12 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
 
 ### Phase E — 收尾與文件歸檔
 
-- [ ] E1. 更新本工作表所有 checkbox 與實測數據
-- [ ] E2. Commit 並推送 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`
-- [ ] E3. 產出 `UPGRADE_LOG_v0.22.6_to_v0.22.7.md`，並向使用者彙整驗證證據、請示是否刪除舊備份 `~/backups/hermes-20261103/`（保留 `hermes-20261104/`）
+- [x] E1. 更新本工作表所有 checkbox 與實測數據 — ✅ Phase 0 / A / B / C / D 全部回填實測值
+- [x] E2. Commit 並推送 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` — ✅ Commit `d703648`（`9b55908..d703648 main -> main`）
+- [x] E3. 產出 `UPGRADE_LOG_v0.22.6_to_v0.22.7.md`，並向使用者彙整驗證證據、請示是否刪除舊備份 `~/backups/hermes-20261103/`（保留 `hermes-20261104/`）
+  - ✅ 已產出 `UPGRADE_LOG_v0.22.6_to_v0.22.7.md`
+  - ✅ 驗證證據已彙整（見 §4 與 UPGRADE_LOG §4）
+  - ⏳ 舊備份 `~/backups/hermes-20261103/` 的刪除授權已向使用者請示
 
 ---
 
@@ -333,9 +340,9 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
 
 ## 7. Go-Sign 確認區
 
-- [ ] §0.5 決策 **A**：目標版本 = **`v0.22.7`**
-- [ ] §0.5 決策 **B**：原樣 `cherry-pick` 攜帶 `my-config-v0.22.6` 全部自訂 commits（零衝突）
-- [ ] §0.5 決策 **C**：npm 漏洞 = **維持不修**
-- [ ] §0.5 決策 **D**：FTS layout = **維持不動**
-- [ ] §0.5 決策 **E**：先建 `20261104` 新備份，待驗證完成後再請示清理 `20261103` 舊備份
-- [ ] 使用者回覆「**Go**」後啟動 Phase 0 → A → B → C → D → E
+- [x] §0.5 決策 **A**：目標版本 = **`v0.22.7`**
+- [x] §0.5 決策 **B**：原樣 `cherry-pick` 攜帶 `my-config-v0.22.6` 全部自訂 commits（零衝突）
+- [x] §0.5 決策 **C**：npm 漏洞 = **維持不修**（2026-11-04 複查 3 個 issue 仍全為 OPEN）
+- [x] §0.5 決策 **D**：FTS layout = **維持不動**
+- [x] §0.5 決策 **E**：先建 `20261104` 新備份，待驗證完成後再請示清理 `20261103` 舊備份
+- [x] 使用者回覆「**Go**」後啟動 Phase 0 → A → B → C → D → E
