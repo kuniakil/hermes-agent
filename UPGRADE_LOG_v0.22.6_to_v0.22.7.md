@@ -190,3 +190,28 @@ kubectl apply -k ~/kubernetes/hermes/overlays/n100
 ```
 
 預期時間：image pull ~1m43s + 開機 < 1 分鐘。
+
+---
+
+## 7. Image stamp 與分支 HEAD 的差異（有意保留）
+
+| 項目 | SHA | 說明 |
+|---|---|---|
+| 已部署 image 的 build stamp | `caa90cb95e` | 部署當下的分支 HEAD |
+| 分支現況 HEAD（`my-config-v0.22.7`） | `e60a623ec7` | 差 3 個 commit |
+
+差異內容**全部為文件**：`docs/worksheet-upgrade-hermes-v0.22.7-20261104.md` 的執行結果回填、`UPGRADE_LOG_v0.22.6_to_v0.22.7.md`，以及本工作表的結案。**runtime 程式碼零差異** —— 重新建置產出的 image 與現行 image 的執行行為完全相同。
+
+**決策：不重新建置、不重新部署。** 理由：
+
+1. 現行部署已通過完整線上驗證（D3–D10 全綠、0 ERROR、Telegram 實測往返正常）；
+2. 重新建置會覆寫同一個 `v0.22.7` tag（Hard Rule 6 的既定行為），導致新 digest、需重新 pull + rollout + 重新驗證，**純粹為了讓 stamp 對齊一個文件 commit 而承擔風險**；
+3. 使用者於 Telegram 端亦已指出 pod 當時運行僅約 29 分鐘，穩定性觀察窗口應予保留而非重置。
+
+若日後因故需要讓 image stamp 與分支 HEAD 完全對齊，重跑同一條指令即可：
+
+```bash
+gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
+  --ref my-config-v0.22.7 -f tag_name=v0.22.7 -f platforms=all
+```
+
