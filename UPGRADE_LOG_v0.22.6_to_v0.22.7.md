@@ -216,3 +216,53 @@ gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
   --ref my-config-v0.22.7 -f tag_name=v0.22.7 -f platforms=all
 ```
 
+---
+
+## 8. npm 漏洞決策複查（2026-11-04 事後稽核）
+
+> 結論：**「不修」決策對 v0.22.7 仍然正確**，但**上游已於 2026-11-03 修復**，預計隨下一個 release 自動帶入，屆時無需任何本地動作。
+
+### 8.1 三個「不能本地修」的硬性理由（仍然成立）
+
+1. **修不持久** — `hermes update` / nightly 走 `_run_npm_install_deterministic` → `npm ci` 從 committed lockfile 重裝，本地 `npm audit fix` 的改動會被丟棄、finding 立刻復現。上游 `hermes_cli/doctor_tools.py:_audit_one` 的 docstring 即載明此點（引用已關閉的 #116774），doctor 刻意不提供本地 mutating 修復指令。
+2. **手動修也會失敗** — `.npmrc` 的 `min-release-age=14` 只允許安裝 14 天前發布的版本，修補版在冷卻期內被 `ETARGET` 擋下（#79021 的 `notarget … with a date before …`）。
+3. **上游 overrides 把版本釘在脆弱上限** — `package.json` overrides 的 `undici@^6 = 6.29.0` / `undici@^7 = 7.30.0` 恰好是 advisory 的脆弱版本上限，`npm audit fix --force` 永遠報 `outside the stated dependency range`，**不會自癒**。
+
+### 8.2 上游已修復（`origin/main`）
+
+上游 commit **`e3085ec023`**（Maciej Lisiewski，2026-11-03 20:43 CET）：
+
+```
+fix(deps): bump undici to 6.29.1 and 7.30.1
+Moves the ui-tui direct pin and the root undici@^6/@^7 overrides, plus
+the photon sidecar's direct pin and override, to the patched releases …
+Both were published 2026-10-15, past the 14-day npm release-age gate.
+```
+
+該 commit 尚未進入任何 tag（`git tag --contains e3085ec023` 為空），預計隨下一個 release（上游節奏約每日到數日一版：v0.22.4 10-21 → v0.22.5 10-22 → v0.22.6 11-02 → v0.22.7 11-03）進入 **v0.22.8 或 v0.23.0**。
+
+**因為我們的 `package-lock.json` 與 `package.json` 對官方逐位元組相同**（sha256 `cc006a0c…`、diff 0 行），下一個升級會**自動取得**此修補，不需要任何本地 lockfile patch。
+
+### 8.3 修補前後對照（`npm audit --package-lock-only`，2026-11-04 實測）
+
+| 範圍 | v0.22.7（現行） | `origin/main`（修補後） | 變化 |
+|---|---|---|---|
+| Root | 0c / **1h** / 12m = 13 | 0c / **0h** / 12m = 12 | ✅ `zod` 高危消除 |
+| web | 0c / **4h** / 32m = 36 | 0c / **2h** / 31m = 33 | ✅ `undici`、`zod` 高危消除 |
+| ui-tui | 0c / **4h** / 34m = 38 | 0c / **2h** / 31m = 33 | ✅ `undici`、`zod` 高危消除 |
+
+修補後殘餘的 2 個 high：`follow-redirects 1.16.0-1.16.1`、`joi 18.0.0-18.3.0`（上游尚未處理）。
+
+### 8.4 實際暴露面（容器內逐一驗證）
+
+- `/opt/hermes/node_modules` **只有 `typescript` + `.bin`**；`zod` / `undici` / `js-yaml` / `axios` / `dompurify` / `yaml` / `electron` / `vitest` / `jsdom` **全部不存在**。
+- `electron` 不在 image 內 —— apps/* (desktop) 從不在 image 裡 npm install（Dockerfile 註解明講）。
+- `web_dist` 不含 `undici` / `zod` / `axios` / `follow-redirects`。
+- 唯一實質暴露點：`/opt/hermes/ui-tui/dist/entry.js` **確實打包了 undici**（ui-tui 直接依賴 6.29.0，含 `NodeClient` / `RedirectHandler` / `buildConnector` 實作）。但其 3 個 advisory **全為 DoS 型**，需對端送出畸形 response 才可能觸發，而 ui-tui 的 undici 只連**本機 gateway**（`127.0.0.1:8642`），攻擊者無法控制該回應 → 實際不可觸發。
+- `joi` / `follow-redirects` 經精確特徵字串驗證（排除 `join` 子字串誤判）→ **完全不在 runtime image 內**。
+- photon sidecar 的 71 個套件已 bake 進 image，但 photon 插件未啟用。
+
+### 8.5 一個量測陷阱
+
+`hermes doctor` 報的 npm 數字在容器裡**不可信** —— web / ui-tui 沒有 node_modules，audit 對空樹回 0（或大幅低估）。**真實數字必須用 `npm audit --package-lock-only`**（此結論自 v0.22.0 即已確立）。本次即因此發現容器的 doctor 數字（web 1h/6m）遠低於 lockfile 真值（web 4h/32m）。
+
