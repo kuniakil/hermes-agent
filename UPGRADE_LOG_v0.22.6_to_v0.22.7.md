@@ -10,7 +10,7 @@
 - **部署環境**：K3s n100，pod `hermes-agent-58b98d987d-5nhh7`
 - **schema_version**：32 → **32**（**未變，DB 零遷移**）
 - **config_version**：52 → **52**（**未變，Config 零遷移**）
-- **備份**：`~/backups/hermes-20261104/`（176MB，integrity ok，messages 18,031；舊備份 `hermes-20261103` 待授權清理）
+- **備份**：`~/backups/hermes-20261104/`（176MB，integrity ok，messages 18,031；舊備份 `hermes-20261103` 已於 2026-11-04 依使用者授權刪除）
 
 ---
 
@@ -173,7 +173,8 @@ npm 漏洞:
   - `state.db`（184,508,416 B）、`state.db-wal`（0 B）、`state.db-shm`（32,768 B）、`config.yaml`
   - 驗證：`messages = 18031`、`sessions = 132`、`PRAGMA integrity_check = ok`
   - 製備方式：Pod 內 `PRAGMA wal_checkpoint(TRUNCATE)` 後以 **tar streaming** 傳回（`kubectl cp` 傳 176MB 時 websocket 中斷 `close 1006`）
-- **舊備份**：`~/backups/hermes-20261103/`（176MB）— 暫留，待使用者授權後清理
+- **舊備份**：`~/backups/hermes-20261103/`（176MB）— ✅ **已於 2026-11-04 依使用者授權刪除**（刪除前已複驗 `hermes-20261104` 完整性：`messages = 18031`、`sessions = 132`、`integrity = ok`）
+  - 現存備份：`~/backups/hermes-20261104/`（176MB，保留）、`~/backups/immich-20261016/`（與本專案無關）
 - **K8s Repo**：`~/kubernetes/hermes/overlays/n100/kustomization.yaml` 已提交並推送 `origin/main`（Commit `d703648`）
 - **Hermes Repo**：分支 `my-config-v0.22.7`，31 個自訂 commits（1 CI purge + 6 核心 + 23 歷史文檔 + 1 本工作表），**0 個 merge commit，歷史完全線性**
 

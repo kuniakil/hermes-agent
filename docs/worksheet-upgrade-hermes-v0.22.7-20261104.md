@@ -191,7 +191,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
   - 產物：`state.db`（184,508,416 B）、`state.db-wal`（0 B）、`state.db-shm`（32,768 B）、`config.yaml`（額外保留）
 - [x] 0.6 驗證備份完整性：`sqlite3 ~/backups/hermes-20261104/state.db "SELECT COUNT(*) FROM messages; PRAGMA integrity_check;"` → **實測 `18031` + `132`（sessions）+ `ok`** ✅
 - [x] 0.7 盤點既有備份並記錄：
-  - 本機 `~/backups/hermes-20261103/`（v0.22.6 升級快照，176MB）— 暫留，待 Phase E 驗證通過後請示使用者是否清理
+  - 本機 `~/backups/hermes-20261103/`（v0.22.6 升級快照，176MB）— ✅ 已於 Phase E 依使用者授權刪除（2026-11-04）
   - 另見 `~/backups/immich-20261016/`（與本次無關）
 
 ### Phase A — 建立分支 + Purge Workflows + 移植自訂 Commits
@@ -311,7 +311,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.6 upstream-v0.22.7 my-co
 - [x] E3. 產出 `UPGRADE_LOG_v0.22.6_to_v0.22.7.md`，並向使用者彙整驗證證據、請示是否刪除舊備份 `~/backups/hermes-20261103/`（保留 `hermes-20261104/`）
   - ✅ 已產出 `UPGRADE_LOG_v0.22.6_to_v0.22.7.md`
   - ✅ 驗證證據已彙整（見 §4 與 UPGRADE_LOG §4）
-  - ⏳ 舊備份 `~/backups/hermes-20261103/` 的刪除授權已向使用者請示
+  - ✅ 舊備份 `~/backups/hermes-20261103/` 已於 2026-11-04 依使用者授權刪除（刪除前複驗 `hermes-20261104`：`messages=18031` / `sessions=132` / `integrity=ok`）；保留 `~/backups/hermes-20261104/`
 
 ---
 
