@@ -272,9 +272,16 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
   - ✅ **無 422**（Hard Rule 8 未觸發）；run URL → `https://github.com/kuniakil/hermes-agent/actions/runs/42129150541`
   - `gh auth status`：`kuniakil`（GH_TOKEN），scopes 含 `workflow` ✅
 - [x] C3. 驗證觸發的 run — ✅ 實測 `event=workflow_dispatch`、`headBranch=my-config-v0.23.0`、`headSha=3d6cda5e0d`（= 本地 HEAD，**非**上游 `2bd378ed1b`）、`createdAt=2026-11-05T23:26:02Z`、`status=in_progress`
-- [ ] C4. **派背景子代理**監控 `gh run watch`（Hard Rule 9；主迴圈不得阻塞）
-- [ ] C5. 驗證 multi-arch image tags：`ghcr.io/kuniakil/hermes-agent:v0.23.0` 與 `latest` 皆為 multi-arch index（`linux/amd64` + `linux/arm64`）
-- [ ] C6. 確認 install stamp：`baseVersion` = `v0.23.0`（我們的 workflow 以 `--base-version "$TAG"` 傳入，`write_install_stamp.py` 的 CLI flags 在 v0.23.0 **完全未變**）
+- [x] C4. **派背景子代理**監控 `gh run watch`（Hard Rule 9；主迴圈不阻塞）— ✅ 唯讀監控子代理回報
+- [x] C5. 驗證 multi-arch image tags — ✅ **`v0.23.0` OK**、**`latest` OK**（同一 index）
+  - media type：`application/vnd.oci.image.index.v1+json`（multi-arch OCI index）
+  - index digest：`sha256:3aeff98bdf226fdd65bd2d6f03783295a9737a5fa619fefc7f3f426cd365f2ee`
+  - `linux/amd64` → `sha256:7f27da89288c42a1b1bb7e3608718b116cec566a14a81f538b89c47a4d2dcab7`
+  - `linux/arm64` → `sha256:bd8ecb549804c80166ca0748ddf9296f3a99a5ea3655ff399da137c373c3b6a8`
+  - 附屬 `unknown/unknown` attestation / provenance manifest（buildx 正常行為）
+- [x] C6. 確認 install stamp — ✅ build log 內 `[write_install_stamp] wrote install-stamp.json -> 3d6cda5e0d84 (my-config-v0.23.0)`，stamp 的 `commit` 欄位與 build provenance 的 `vcs:revision` / `github_workflow_sha` **全部指向我們的 commit**
+- [x] C7. **自訂層 14/14 全部進入 image** — ✅ build log 內 13 個標記直接命中（`openssh-server` / `rsync` / `ssh-keygen -A` / `zh_TW.UTF-8` / `en_US.UTF-8` / `useradd -u 10000` / `--extra edge-tts` / `firecrawl` / `dingtalk` / `feishu` / `exa` / `/tmp/.npm-cache` / `entrypoint-ssh.sh`）；第 14 個 `ENV HOME=/opt/data` 因 Dockerfile 的 `ENV` 指令**不會被 echo 成 build step**（log 內連 `HERMES_HOME` / `HERMES_TUI_DIR` 也都沒有），已改以 `docker buildx imagetools inspect --format '{{json .Image}}'` 直接驗證 published image config → **amd64 與 arm64 的 `Env` 清單皆含 `HOME=/opt/data`** ✅
+- [x] C8. Build 結果 — ✅ **SUCCESS**，耗時 **11m55s**（`23:26:02Z → 23:37:57Z`）；jobs：`prepare` / `build-and-push (linux/amd64, ubuntu-latest)` / `build-and-push (linux/arm64, ubuntu-24.04-arm)` / `merge` **全部 success**
 
 ### Phase D — K3s 部署 + 全方位驗證
 
