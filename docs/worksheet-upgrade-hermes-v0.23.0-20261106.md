@@ -321,6 +321,10 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
   - skills 統計：CLI `hermes skills list` 正常 → **95 enabled、0 disabled**（21 hub-installed、1 builtin、73 local）；`find_all_skills()` 直接呼叫正常 → **96 筆** → **核心 skill 載入路徑完全不受影響**
 - [ ] D10b. **真實 Telegram 訊息往返驗證** — ⏳ **待使用者實測回報**
 - [ ] D11. **部署後 24h 觀察**：ERROR/CRITICAL 計數 = 0、`RESTARTS = 0`、記憶體趨勢平穩
+  - 📌 **基線（2026-11-06 07:52 實測，開機 ~11 分鐘後）**：`pod startedAt = 2026-11-05T23:39:21Z`、`RESTARTS = 0`、`kubectl top` → CPU 15m / MEM **400Mi**、`gateway.log` 自開機起 ERROR = 2（**全為我方 `/v1/skills` 探測**，排除後 **0**）、CRITICAL = **0**
+  - 觀察窗口到期：**2026-11-06 23:39Z**（開機 +24h）
+  - 驗收指令：`kubectl --context n100-cf -n hermes top pod hermes-agent-f9496b576-wcxg8` + `kubectl --context n100-cf -n hermes exec hermes-agent-f9496b576-wcxg8 -- sh -lc 'awk "\$0 >= \"2026-11-06 07:41\"" /opt/data/logs/gateway.log | grep " ERROR \| CRITICAL " | grep -v "/v1/skills" | wc -l'`（期望 **0**）
+  - ⚠️ 對照：全 log 的 **812 筆歷史 ERROR** 全部落在 `2026-10-07` ~ `2026-11-03`（每日 2–4 筆）；`2026-11-04` 起為 0
 
 ### Phase E — 收尾與文件歸檔
 
