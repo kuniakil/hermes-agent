@@ -213,8 +213,9 @@ Camofox MCP:
   - `state.db`（184,508,416 B）、`state.db-wal`（0 B）、`state.db-shm`（32,768 B）、`config.yaml`（13,234 B）
   - 驗證：`messages = 18,044`、`sessions = 133`、`PRAGMA integrity_check = ok`
   - 製備方式：Pod 內 `PRAGMA wal_checkpoint(TRUNCATE)`（實測 `(0, 0, 0)`）後以 **tar streaming** 傳回（`kubectl cp` 傳 176MB 時 websocket 中斷 `close 1006` —— 見記憶 `kubectl-cp-large-db-backup-tar-streaming`）
-- **舊備份**：`~/backups/hermes-20261104/`（176MB，v0.22.7 升級快照）— ⏳ **待使用者授權後刪除**
-  - 現存備份：`~/backups/hermes-20261106/`（176MB，保留）、`~/backups/hermes-20261104/`（176MB，待授權清理）、`~/backups/immich-20261016/`（與本專案無關）
+- **舊備份**：`~/backups/hermes-20261104/`（176MB，v0.22.7 升級快照）— ✅ **已於 2026-11-06 依使用者授權刪除**
+  - 刪除前已複驗 `hermes-20261106` 完整性：`PRAGMA integrity_check = ok`、`messages = 18,044`、`sessions = 133` → 通過後才執行 `rm -rf`（回收 176MB）
+  - 現存備份：`~/backups/hermes-20261106/`（176MB，保留）、`~/backups/immich-20261016/`（與本專案無關）
 - **K8s Repo**：`~/kubernetes/hermes/overlays/n100/kustomization.yaml` 已提交並推送 `origin/main`（commit `61491d0`，`newTag: "v0.22.7"` → `"v0.23.0"`）
 - **Hermes Repo**：分支 `my-config-v0.23.0`，自訂 commits 合計 **40**（1 CI purge + 6 core + 32 docs + 1 worksheet），**0 個 merge commit，歷史完全線性**
 
@@ -355,6 +356,6 @@ vulns: { info: 0, low: 0, moderate: 21, high: 2, critical: 0, total: 23 }
 
 | # | 項目 | 狀態 |
 |---|---|---|
-| **D10b** | **真實 Telegram 訊息往返驗證** — 需使用者實測回報（`messages` +N、`sessions` +1、`messages_fts` 同步、0 ERROR） | ⏳ 待使用者回報 |
-| **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中 |
-| **E4** | 是否刪除舊備份 `~/backups/hermes-20261104/` | ⏳ 待使用者決定 |
+| **D10b** | **真實 Telegram 訊息往返驗證** — 需使用者實測回報（`messages` +N、`sessions` +1、`messages_fts` 同步、0 ERROR） | ⏳ 使用者已同意實測，等待回報 |
+| **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中（基線已記錄：RESTARTS 0、400Mi、0 ERROR；到期 2026-11-06 23:39Z） |
+| **E4** | 是否刪除舊備份 `~/backups/hermes-20261104/` | ✅ **已完成**（使用者授權後刪除，回收 176MB） |
