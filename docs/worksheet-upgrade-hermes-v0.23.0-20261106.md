@@ -431,7 +431,7 @@ TypeError: find_all_skills() got an unexpected keyword argument 'include_editori
 | 項目 | SHA | 說明 |
 |---|---|---|
 | 已部署 image 的 build stamp | `3d6cda5e0d` | 部署當下的分支 HEAD（GHCR run `42129150541` 的 `headSha`） |
-| 分支現況 HEAD（`my-config-v0.23.0`） | `26b9f50b32` | 差 2 個 commit |
+| 分支現況 HEAD（`my-config-v0.23.0`） | `ae99ed9748` | 差 3 個 commit（全為 docs） |
 
 差異內容**全部為文件**：`docs/worksheet-upgrade-hermes-v0.23.0-20261106.md` 的執行結果回填、`UPGRADE_LOG_v0.22.7_to_v0.23.0.md`。**runtime 程式碼零差異** —— 重新建置產出的 image 與現行 image 的執行行為完全相同。
 
