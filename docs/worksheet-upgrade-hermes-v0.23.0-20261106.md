@@ -229,7 +229,9 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
   - 傳輸：**tar streaming**（`kubectl exec -- tar -cf - -C /opt/data state.db state.db-wal state.db-shm config.yaml`）→ exit 0，184,565,760 B
   - 產物：`state.db`（184,508,416 B）、`state.db-wal`（0 B）、`state.db-shm`（32,768 B）、`config.yaml`（13,234 B）
 - [x] 0.6 驗證備份完整性 — ✅ **實測 `messages = 18,044` / `sessions = 133` / `PRAGMA integrity_check = ok`**
-- [x] 0.7 盤點既有備份 — ✅ `~/backups/hermes-20261104/`（v0.22.7 升級快照，176MB）、`~/backups/immich-20261016/`（與本次無關）；待驗證完成後再請示刪除 20261104（決策 E）
+- [x] 0.7 盤點既有備份 — ✅ `~/backups/hermes-20261104/`（v0.22.7 升級快照，176MB）、`~/backups/immich-20261016/`（與本次無關）
+- [x] 0.8 **刪除舊備份**（決策 E，2026-11-06 經使用者授權）— ✅ 刪除前複驗 `hermes-20261106`：`integrity = ok`、`messages = 18,044`、`sessions = 133` → 通過；`rm -rf ~/backups/hermes-20261104/`（回收 176MB）
+  - 現存備份：`~/backups/hermes-20261106/`（176MB，保留）、`~/backups/immich-20261016/`（與本專案無關）
 
 ### Phase A — 建立分支 + Purge Workflows + 移植自訂 Commits
 
@@ -333,7 +335,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 - [x] E1. 更新本工作表所有 checkbox 與實測數據 — ✅ Phase 0 / A / B / C / D1–D10a 已全部回填；D10b（使用者 Telegram 實測）與 D11（24h 觀察）待完成
 - [x] E2. Commit + push `~/kubernetes/.../kustomization.yaml` — ✅ commit `61491d0`，push `b6b4ab4..61491d0 main -> main`
 - [x] E3. 產出 `UPGRADE_LOG_v0.22.7_to_v0.23.0.md` — ✅ 檔名：`/Users/mlee/hermes/UPGRADE_LOG_v0.22.7_to_v0.23.0.md`
-- [ ] E4. 請示是否刪除舊備份 `~/backups/hermes-20261104/`（保留 `hermes-20261106/`）— ⏳ **待使用者決定**
+- [x] E4. 請示是否刪除舊備份 `~/backups/hermes-20261104/`（保留 `hermes-20261106/`）— ✅ **2026-11-06 使用者授權刪除**；刪除前複驗 `hermes-20261106` 完整性通過（integrity ok / messages 18,044 / sessions 133）
 
 ---
 
@@ -371,7 +373,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 - [x] §0.5 決策 **B**：自訂 commits = **原樣 cherry-pick**（6 個核心）+ Dockerfile 7 hunks — ✅ 2026-11-06 採納，全部零衝突
 - [x] §0.5 決策 **C**：npm 漏洞 = **維持不修**（上游已於本版修補）— ✅ 2026-11-06 採納
 - [x] §0.5 決策 **D**：FTS layout = **維持不動** — ✅ 2026-11-06 採納
-- [x] §0.5 決策 **E**：先建 `20261106` 新備份，驗證完成後再請示清理 `20261104` 舊備份 — ✅ 2026-11-06 採納（備份已建立並驗證）
+- [x] §0.5 決策 **E**：先建 `20261106` 新備份，驗證完成後再請示清理 `20261104` 舊備份 — ✅ 2026-11-06 採納；備份已建立並驗證；`20261104` 已於 2026-11-06 經使用者授權刪除（回收 176MB）
 - [x] §0.5 決策 **F**：`/opt/data/skills` 殘留（181 個）**本次不動**，另開議題 — ✅ 2026-11-06 採納
 - [x] 使用者回覆「**Go**」（2026-11-06）後啟動 Phase 0 → A → B → C → D → E
 
