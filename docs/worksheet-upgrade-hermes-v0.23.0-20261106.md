@@ -5,8 +5,8 @@
 - **新分支**：`my-config-v0.23.0`（基底 = `upstream-v0.23.0`，**不是**本地 `v0.23.0` tag）
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork（⚠️ 與 OpenClaw 相反）
 - **發布模型**：`my-config-v0.23.0` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.23.0`
-- **目前上線版本**：`v0.22.7`（K3s n100，pod `hermes-agent-58b98d987d-5nhh7`，Running，RESTARTS 0，age 47h）
-- **狀態**：🚧 **執行中**（Go-Sign 2026-11-06 已收到；Phase 0 / A / B / C1–C3 已完成，GHCR build run `42129150541` 進行中）
+- **目前上線版本**：✅ **`v0.23.0`**（K3s n100，pod `hermes-agent-f9496b576-wcxg8`，Running 1/1，RESTARTS 0，image digest `sha256:3aeff98b…`）
+- **狀態**：✅ **升級完成，Phase E 收尾中**（Go-Sign 2026-11-06 已收到；Phase 0 / A / B / C / D1–D10a 全綠；待 D10b 使用者 Telegram 實測回報 + D11 24h 觀察）
 - **日期**：2026-11-06
 
 ---
@@ -285,35 +285,49 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 
 ### Phase D — K3s 部署 + 全方位驗證
 
-- [ ] D1. 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.22.7"` → **`"v0.23.0"`**，commit + push
-- [ ] D2. `kubectl apply -k ~/kubernetes/hermes/overlays/n100`；**派背景子代理**監控 rollout
-  - 期望：新 pod `Running` / `ready=true` / `RESTARTS 0`，image digest = 新 v0.23.0
-- [ ] D3. **冒煙測試**（對照 v0.22.7 基線）：
-  - Python `3.14.9`、`openai 2.54.0`、`pydantic 2.14.1`、`nemo_relay 0.11.0`
-  - Node.js / npm 版本、Debian base = `13.7 (trixie)`
-  - 3 種 locale（`C.utf8` / `en_US.utf8` / `zh_Tw.utf8`）全在
-  - `sshd` / `rsync` / `tini` / `tmux` / `ffmpeg` 全在
-  - Chromium binary 存在
-  - Telegram connected、**0 ERROR / 0 CRITICAL**
-- [ ] D4. **版本確認**：`hermes --version` = **`Hermes Agent vv0.23.0 (…) · upstream <我們的 short_sha>`**
-- [ ] D5. **DB Schema 檢查**：`PRAGMA integrity_check` = `ok`；`SCHEMA_VERSION = 32`、`FTS_STORAGE_VERSION = 3` 零變更
-- [ ] D6. **資料完整性**：`sessions >= 133`、`messages >= 18,044`（零損失）、`messages_fts` 計數 = messages
-- [ ] D7. **Config 驗證**：`_config_version` 維持 **52**（無遷移）；`model.default: MiniMax-M3`、`terminal.backend: local`、`toolsets: [hermes-cli]`、`mcp_servers.camofox` 原封不動；`_left_core_used` **未出現**（= 不觸發外掛自動安裝）
-- [ ] D8. **開機與穩定性驗證**（★ 本次重點，涵蓋 B1/B2）：`RESTARTS = 0`
-  - `gateway.log` 開機段：`✓ telegram connected`、`api_server connected`、`Gateway running with 2 platform(s)`、`Channel directory built`
-  - **B2 專項**：s6 slot 可被 hermes 使用者查詢（`s6-svstat` / `hermes doctor` 無 EACCES）
-  - **B2 專項**：`02-reconcile-profiles` 執行無錯誤（單 profile，預期不註冊任何 profile-gateways service）
-  - 關閉舊 Pod 為 graceful（`Shutdown phase: all adapters disconnected`）
-- [ ] D9. **Camofox MCP 驗證**：端口 8080 通訊正常（帶 token 的 `initialize` → HTTP 200）
-- [ ] D10. **真實 Telegram 訊息往返驗證** — 需使用者實測回報（`messages` +N、`sessions` +1、`messages_fts` 同步、0 ERROR）
+- [x] D1. 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` — ✅ `newTag: "v0.22.7"` → **`"v0.23.0"`**；commit `61491d0`，push `b6b4ab4..61491d0 main -> main`
+- [x] D2. `kubectl apply -k ~/kubernetes/hermes/overlays/n100` — ✅ apply 結果：`namespace/hermes unchanged`、`secret/secrets-env unchanged`、`service/hermes-agent unchanged`、**`deployment.apps/hermes-agent configured`**、`ingressroutetcp.traefik.io/hermes-ssh-ingress unchanged`
+  - ✅ **rollout 成功**（背景子代理監控，耗時 ~100s）：新 pod **`hermes-agent-f9496b576-wcxg8`**，`Running 1/1`、`ready=true`、**`RESTARTS 0`**、`startedAt=2026-11-05T23:41:01Z`、node `n100`
+  - ✅ image ID = `ghcr.io/kuniakil/hermes-agent@sha256:3aeff98bdf226fdd65bd2d6f03783295a9737a5fa619fefc7f3f426cd365f2ee` = **v0.23.0 multi-arch index digest，完全吻合**
+  - ✅ hostPath `/data/services/hermes/data` 持續掛載於 `/opt/data`（DB 未遺失）；`hermes-ssh-host-keys` 6 個 `/etc/ssh/ssh_host_*` 掛載正常
+  - ✅ 舊 pod `hermes-agent-58b98d987d-5nhh7` 已移除；ReplicaSet 縮到 0/0/0；Deployment `updated/ready/avail = 1/1/1`、`Available=True`、`Progressing=True`
+- [x] D3. **冒煙測試**（對照 v0.22.7 基線）— ✅ **全部通過**
+  - Python `3.14.9` ✅、`openai 2.54.0` ✅、`pydantic 2.14.1` ✅、**`nemo-relay 0.11.0` ✅**
+  - Node.js `v26.12.1` ✅、npm `12.0.2` ✅
+  - Debian base = `13 (trixie)` ✅
+  - 3 種 locale（`C.utf8` / `en_US.utf8` / `zh_TW.utf8`）全在 ✅
+  - `sshd` `/usr/sbin/sshd` ✅、`rsync` `/usr/bin/rsync` ✅、`tini` `/usr/bin/tini` ✅、`tmux` `/usr/bin/tmux` ✅、`ffmpeg` `/usr/local/bin/ffmpeg` ✅
+  - Chromium binary 存在：`/opt/hermes/tools/chromium-1208/chrome-linux64/chrome` ✅
+  - Telegram connected ✅、**0 ERROR / 0 CRITICAL** ✅（見 D8）
+- [x] D4. **版本確認** — ✅ 實測 **`Hermes Agent vv0.23.0 (2026.9.24) · upstream 3d6cda5e`**（`upstream` 後綴為**我們的 commit**，非上游 `2bd378ed1b`）
+- [x] D5. **DB Schema 檢查** — ✅ `PRAGMA integrity_check` = **`ok`**；`SCHEMA_VERSION = 32` / `FTS_STORAGE_VERSION = 3` 零變更
+- [x] D6. **資料完整性** — ✅ 部署後 `sessions = 134`（基線 133 + 1 條 api_server 回合）、`messages = 18,049`（基線 18,044 + 5）、**`messages_fts = 18,049` = messages**、`admissions = 12`、`worker_executions = 0`、`worker_receipts = 0` → **零損失**
+- [x] D7. **Config 驗證** — ✅ `_config_version` 維持 **52**（無遷移）；`model.default: MiniMax-M3` / `provider: minimax`、`terminal.backend: local`、`toolsets: [hermes-cli]` 原封不動；`mcp_servers.camofox` 原封不動；**`_left_core_used` 出現次數 = 0** → 不觸發任何外掛自動安裝
+- [x] D8. **開機與穩定性驗證**（★ 涵蓋 B1/B2）— ✅
+  - `RESTARTS = 0`
+  - 開機 log（`2026-11-06 07:41:01` 起）：`Model context warmed: MiniMax-M3 -> 1000000 tokens (detected)` ✅、`✓ telegram connected` ✅、`✓ api_server connected` ✅、`Gateway running with 2 platform(s)` ✅、`Channel directory built: 1 target(s)` ✅、`kanban dispatcher: embedded in gateway` ✅、`Cron scheduler will tick 1 profile(s): ['default']` ✅
+  - 舊 Pod 關閉為 graceful：`Shutdown context: signal=SIGTERM under_systemd=no parent_name=s6-supervise` ✅
+  - **B2 專項 ✅**：s6 行程樹已切換到 v0.23.0 新架構 — `s6-supervise profile-gateways` (pid 30)、**`s6-svscan /run/hermes-service`** (pid 185)、`s6-supervise gateway-default` (pid 199)、`s6-supervise main-hermes` (pid 33)、per-profile log `s6-log … /opt/data/logs/gateways/default`
+  - **B2 專項 ✅**：s6 slot 可被 hermes 使用者查詢，**無 EACCES** — `s6-svstat /run/service/main-hermes` → `up (pid 186 pgid 186)`；`hermes doctor` → `s6 Supervision ✓ Host gateway: the host gateway (PID 202) serving profiles default`
+  - `dashboard` slot 顯示 `down (exitcode 0)` = **設計如此**（`HERMES_DASHBOARD` 未設時 run script 乾淨退出、finish script 回 125 → slot 永久 down），非故障
+  - 部署後 ERROR 統計：**開機後 2 筆，全部是我方 `/v1/skills` 探測所觸發**（見 §8）；排除後 **ERROR = 0、CRITICAL = 0**（全 log 的 810 筆歷史 ERROR 皆落在 `2026-10-07` ~ `2026-11-03`，11-04 起為 0）
+- [x] D9. **Camofox MCP 驗證** — ✅ DNS → `10.43.250.235`；未帶 token GET → `HTTP 401`（端點存活、正確要求 Authorization）；帶 token 的 MCP `initialize` JSON-RPC → **`HTTP 200`**，`serverInfo {"name":"camofox-mcp","version":"1.16.0"}`，capabilities 含 `tools` + `prompts`
+  - 註：Hermes config 的 Bearer token 與 `camofox/camofox-secret:CAMOFOX_HTTP_API_KEY` **逐字相符**（40 chars，secret 建立於 2026-08-15，pod 3d19h 未重啟）→ 服務端與設定皆無變更
+- [x] D10a. **經 gateway api_server 跑真實 agent 回合**（主代理主動驗證，非使用者回報）— ✅
+  - `POST http://127.0.0.1:8642/v1/chat/completions`（`Authorization: Bearer $API_SERVER_KEY`）→ **`HTTP 200`，耗時 6.3s**
+  - 模型成功呼叫 `bash` 工具並回報 **`hermes-upgrade-smoke-v0230`** ✅
+  - DB 同步寫入：`sessions 133→134`、`messages 18,044→18,049`、`messages_fts = 18,049` = messages、`integrity ok` ✅
+  - API 端點實測：`/health` `/v1/health` `/v1/models` `/v1/capabilities` `/v1/toolsets` `/api/sessions` **皆 200**；`/v1/skills` → **500（上游既有缺陷，見 §8）**；`/v1/models/hermes-agent` → 404（非既有路由，忽略）
+  - skills 統計：CLI `hermes skills list` 正常 → **95 enabled、0 disabled**（21 hub-installed、1 builtin、73 local）；`find_all_skills()` 直接呼叫正常 → **96 筆** → **核心 skill 載入路徑完全不受影響**
+- [ ] D10b. **真實 Telegram 訊息往返驗證** — ⏳ **待使用者實測回報**
 - [ ] D11. **部署後 24h 觀察**：ERROR/CRITICAL 計數 = 0、`RESTARTS = 0`、記憶體趨勢平穩
 
 ### Phase E — 收尾與文件歸檔
 
-- [ ] E1. 更新本工作表所有 checkbox 與實測數據
-- [ ] E2. Commit + push `~/kubernetes/.../kustomization.yaml`
-- [ ] E3. 產出 `UPGRADE_LOG_v0.22.7_to_v0.23.0.md`
-- [ ] E4. 請示是否刪除舊備份 `~/backups/hermes-20261104/`（保留 `hermes-20261106/`）
+- [x] E1. 更新本工作表所有 checkbox 與實測數據 — ✅ Phase 0 / A / B / C / D1–D10a 已全部回填；D10b（使用者 Telegram 實測）與 D11（24h 觀察）待完成
+- [x] E2. Commit + push `~/kubernetes/.../kustomization.yaml` — ✅ commit `61491d0`，push `b6b4ab4..61491d0 main -> main`
+- [x] E3. 產出 `UPGRADE_LOG_v0.22.7_to_v0.23.0.md` — ✅ 檔名：`/Users/mlee/hermes/UPGRADE_LOG_v0.22.7_to_v0.23.0.md`
+- [ ] E4. 請示是否刪除舊備份 `~/backups/hermes-20261104/`（保留 `hermes-20261106/`）— ⏳ **待使用者決定**
 
 ---
 
@@ -329,6 +343,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 | **殘留 skills 引用已移除的 `browser_*` 工具** | 🟢 低（非本次引入） | v0.22.7 已在同一狀態運行；決策 F = 本次不動，另開議題 |
 | **GitHub Actions Fork 自動停用（HTTP 422）** | 🟡 中（外部啟發式） | 若觸發時回 422，直接請使用者在 `/actions` 點擊 re-enable 橫幅（Hard Rule 8） |
 | **npm 漏洞** | 🟢 無（既有決策，且上游已修補） | v0.23.0 內含 undici 6.29.1 / 7.30.1 / zod 4.6.7 / fast-uri 3.1.9；容器 runtime 暴露面仍為 0 |
+| **`GET /v1/skills` 恆回 500** | 🟢 **非本次引入**（上游既有缺陷） | 逐 tag 比對 `upstream-v0.22.7` 與 `upstream-v0.23.0` 程式碼**完全相同**；6 個上游 issue 自 2026-09-12 起全為 OPEN。我們無第一方消費路徑（核心 `find_all_skills()` 與 CLI `hermes skills list` 實測正常）→ **不修**，見 §8 |
 
 ---
 
@@ -353,3 +368,82 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 - [x] §0.5 決策 **E**：先建 `20261106` 新備份，驗證完成後再請示清理 `20261104` 舊備份 — ✅ 2026-11-06 採納（備份已建立並驗證）
 - [x] §0.5 決策 **F**：`/opt/data/skills` 殘留（181 個）**本次不動**，另開議題 — ✅ 2026-11-06 採納
 - [x] 使用者回覆「**Go**」（2026-11-06）後啟動 Phase 0 → A → B → C → D → E
+
+---
+
+## 8. 上游既有缺陷：`GET /v1/skills` 恆回 HTTP 500（**非本次升級引入，不修**）
+
+> 部署後實測發現。已用 `git show` 逐 tag 比對 + GitHub issue 追查確認為**上游既有缺陷**，與 v0.23.0 無關。
+
+### 8.1 現象
+
+```
+GET http://127.0.0.1:8642/v1/skills
+→ HTTP 500
+TypeError: find_all_skills() got an unexpected keyword argument 'include_editorial'
+```
+
+### 8.2 根因（上游 `upstream-v0.23.0` 原始碼）
+
+| 檔案 | 行 | 內容 |
+|---|---|---|
+| `gateway/platforms/api_server.py` | 2388 | `find_all_skills(skip_disabled=False, include_editorial=True)` ← **呼叫端多傳了參數** |
+| `tools/skills_tool.py` | 277 | `def find_all_skills(*, skip_disabled: bool = False) -> list[dict[str, Any]]:` ← **函式簽章沒有 `include_editorial`** |
+
+### 8.3 判定為「既有缺陷」的三項證據
+
+1. **逐 tag 逐位元組比對**：`upstream-v0.22.7` 的 `api_server.py:2388` 與 `skills_tool.py:277` **與 v0.23.0 完全相同** → 該 500 在我們升級前的 v0.22.7 上就已存在，**不是 v0.23.0 的 regression**。
+2. **上游 `main` 仍存在**：缺陷在 `origin/main`（上游最新）同樣存在，尚未修復。
+3. **上游 issue 群已回報且全部 OPEN**（2026-11-06 複查）：
+
+| Issue | 標題 | 狀態 | 建立 |
+|---|---|---|---|
+| [#108967](https://github.com/NousResearch/hermes-agent/issues/108967) | [Bug]: GET /v1/skills always returns HTTP 500 | **OPEN** | 2026-09-12 |
+| [#120831](https://github.com/NousResearch/hermes-agent/issues/120831) | TypeError: `_find_all_skills()` got an unexpected keyword argument `include_editorial` | **OPEN** | 2026-09-24 |
+| [#124853](https://github.com/NousResearch/hermes-agent/issues/124853) | GET /v1/skills always returns 500 on v0.21.5 | **OPEN** | 2026-09-27 |
+| [#132317](https://github.com/NousResearch/hermes-agent/issues/132317) | GET /v1/skills returns 500 — `_find_all_skills()` … unexpected keyword | **OPEN**（duplicate） | 2026-10-03 |
+| [#142575](https://github.com/NousResearch/hermes-agent/issues/142575) | GET /v1/skills returns 500 - stale `include_editorial` kwarg after Collective Wisdom revert | **OPEN** | 2026-10-21 |
+| [#148508](https://github.com/NousResearch/hermes-agent/issues/148508) | [Bug]: `/v1/skills` still returns HTTP 500 in latest Docker image (v0.22.6) | **OPEN** | 2026-11-03 |
+
+> 最早回報於 **2026-09-12（v0.21.x）**，橫跨 4 個 minor 版本未被修。皆標註 `type/bug` + `comp/gateway`。
+
+### 8.4 為什麼不修
+
+| 理由 | 說明 |
+|---|---|
+| **不是本次引入** | 在 v0.22.7 即已存在 → 修它不屬於本次升級範圍，且會讓我們的分支與上游產生無謂分歧 |
+| **無第一方消費路徑** | 我們的部署是 server-only（K3s 容器），**沒有任何第一方元件呼叫 `/v1/skills`**：Desktop 不部署、webapp 未啟用、CLI 走的是 `hermes skills list` 而非 HTTP |
+| **核心 skill 載入完全正常** | 實測 `find_all_skills()` 直接呼叫 → **96 筆正常回傳**；CLI `hermes skills list` → **95 enabled / 0 disabled**（21 hub-installed + 1 builtin + 73 local）。受影響的**只有那 1 個 HTTP 端點** |
+| **上游未修前動它會產生維護負擔** | 下次 rebase/cherry-pick 上游時必然衝突，且我們要替上游承擔 correctness 責任 |
+
+### 8.5 實際影響
+
+- **零功能影響**：我們的 Telegram bot 走 gateway 內部路徑，不經 `/v1/skills`。
+- **僅 2 筆 ERROR log**：開機後的 2 筆 ERROR 全部來自**我方自己的 `/v1/skills` 探測**（07:45:13、07:45:25）。排除我方探測後 = **ERROR 0 / CRITICAL 0**。
+- **對外揭露面**：`/v1/skills` 需 `API_SERVER_KEY` 認證；我們的 api_server 未對外公開（僅 Pod 內 `127.0.0.1:8642`）。
+
+> 📌 若日後上游修復，本分支 rebase 時自然帶入；若我們先手動修，未來 rebase 必衝突 —— 故**保留原狀**。
+
+---
+
+## 9. Image stamp 與分支 HEAD 的差異（有意保留）
+
+| 項目 | SHA | 說明 |
+|---|---|---|
+| 已部署 image 的 build stamp | `3d6cda5e0d` | 部署當下的分支 HEAD（GHCR run `42129150541` 的 `headSha`） |
+| 分支現況 HEAD（`my-config-v0.23.0`） | `26b9f50b32` | 差 2 個 commit |
+
+差異內容**全部為文件**：`docs/worksheet-upgrade-hermes-v0.23.0-20261106.md` 的執行結果回填、`UPGRADE_LOG_v0.22.7_to_v0.23.0.md`。**runtime 程式碼零差異** —— 重新建置產出的 image 與現行 image 的執行行為完全相同。
+
+**決策：不重新建置、不重新部署**（與 v0.22.7 升級的 §7 決策一致）。理由：
+
+1. 現行部署已通過完整線上驗證（D1–D10a 全綠、排除我方探測後 0 ERROR）；
+2. 重新建置會覆寫同一個 `v0.23.0` tag（Hard Rule 6 的既定行為），導致新 digest、需重新 pull + rollout + 重新驗證，**純粹為了讓 stamp 對齊一個文件 commit 而承擔風險**；
+3. D11 的 24h 穩定性觀察窗口不應被無謂重置。
+
+若日後因故需要讓 image stamp 與分支 HEAD 完全對齊，重跑同一條指令即可：
+
+```bash
+gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
+  --ref my-config-v0.23.0 -f tag_name=v0.23.0 -f platforms=all
+```
