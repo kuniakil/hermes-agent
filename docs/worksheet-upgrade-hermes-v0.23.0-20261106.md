@@ -6,7 +6,7 @@
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork（⚠️ 與 OpenClaw 相反）
 - **發布模型**：`my-config-v0.23.0` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.23.0`
 - **目前上線版本**：`v0.22.7`（K3s n100，pod `hermes-agent-58b98d987d-5nhh7`，Running，RESTARTS 0，age 47h）
-- **狀態**：⏳ **待 Go-Sign**（本檔為 Phase 1 產出，未做任何修改）
+- **狀態**：🚧 **執行中**（Go-Sign 2026-11-06 已收到；Phase 0 / A / B / C1–C3 已完成，GHCR build run `42129150541` 進行中）
 - **日期**：2026-11-06
 
 ---
@@ -217,57 +217,61 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 
 ### Phase 0 — 停機前盤點 + 備份（MANDATORY）
 
-- [ ] 0.1 確認無使用中：查 24h 內訊息數與最後一則時間（**預檢實測：`msgs_24h = 0`，最後一則 `2026-11-04 08:04:35` 台北**）
-- [ ] 0.2 記錄升級前基線（部署後不得下降）：
-  - **2026-11-06 預檢基線**：`sessions = 133`、`messages = 18,044`、`state.db = 184,508,416 B (176.0MB)`、`integrity = ok`
+- [x] 0.1 確認無使用中 — ✅ **實測 `msgs_24h = 0`**，最後一則 `2026-11-04 08:04:35` 台北 / `00:04:35 UTC`（閒置近 2 天）
+- [x] 0.2 記錄升級前基線（部署後不得下降）：
+  - **2026-11-06 實測基線**：`sessions = 133`、`messages = 18,044`、`state.db = 184,508,416 B (176.0MB)`、`integrity = ok`
   - `session_admissions = 11`、`worker_executions = 0`、`worker_receipts = 0`
   - Pod：`hermes-agent-58b98d987d-5nhh7`，`Running`，`RESTARTS 0`，age `47h`
-- [ ] 0.3 記錄 FTS 現況（維持 opt-in，本次不動）— `FTS_STORAGE_VERSION = 3` 於 v0.22.7 / v0.23.0 皆相同
-- [ ] 0.4 記錄 config 基線：**實測 `_config_version: 52`**、`model.default: MiniMax-M3`、`terminal.backend: local`、`toolsets: [hermes-cli]`、`mcp_servers.camofox`（HTTP）、`browser.cdp_url: ''`
-- [ ] 0.5 **備份 DB（`.db` + `.db-wal` + `.db-shm`，缺一不可）**：建立於 `~/backups/hermes-20261106/`
-  - 前置：於 Pod 內執行 `PRAGMA wal_checkpoint(TRUNCATE)` → `(0,0,0)`
-  - 傳輸：**tar streaming**（`kubectl exec -- tar -cf - -C /opt/data …`）— ⚠️ 不要用 `kubectl cp`，176MB 會 websocket 中斷（`close 1006`）
-  - 產物：`state.db`、`state.db-wal`、`state.db-shm`、`config.yaml`
-- [ ] 0.6 驗證備份完整性：`sqlite3 ~/backups/hermes-20261106/state.db "SELECT COUNT(*) FROM messages; PRAGMA integrity_check;"` → 預期 `18044` + `ok` ✅
-- [ ] 0.7 盤點既有備份並記錄：`~/backups/hermes-20261104/`（v0.22.7 升級快照，176MB）— 待驗證完成後再請示刪除（決策 E）
+- [x] 0.3 記錄 FTS 現況（維持 opt-in，本次不動）— ✅ `FTS_STORAGE_VERSION = 3` 於 v0.22.7 / v0.23.0 皆相同
+- [x] 0.4 記錄 config 基線 — ✅ **實測 `_config_version: 52`**、`model.default: MiniMax-M3` / `provider: minimax`、`terminal.backend: local`、`toolsets: [hermes-cli]`、`mcp_servers.camofox`（HTTP + Bearer）、`browser.cdp_url: ''`、`/opt/data/plugins` 空、`/opt/data/profiles` 無
+- [x] 0.5 **備份 DB（`.db` + `.db-wal` + `.db-shm`，缺一不可）** — ✅ 建立於 `~/backups/hermes-20261106/`
+  - 前置：`PRAGMA wal_checkpoint(TRUNCATE)` → 實測 `(0, 0, 0)`，`state.db-wal` 歸零
+  - 傳輸：**tar streaming**（`kubectl exec -- tar -cf - -C /opt/data state.db state.db-wal state.db-shm config.yaml`）→ exit 0，184,565,760 B
+  - 產物：`state.db`（184,508,416 B）、`state.db-wal`（0 B）、`state.db-shm`（32,768 B）、`config.yaml`（13,234 B）
+- [x] 0.6 驗證備份完整性 — ✅ **實測 `messages = 18,044` / `sessions = 133` / `PRAGMA integrity_check = ok`**
+- [x] 0.7 盤點既有備份 — ✅ `~/backups/hermes-20261104/`（v0.22.7 升級快照，176MB）、`~/backups/immich-20261016/`（與本次無關）；待驗證完成後再請示刪除 20261104（決策 E）
 
 ### Phase A — 建立分支 + Purge Workflows + 移植自訂 Commits
 
-- [ ] A0. **取得使用者 Go-Sign**（確認 §0.5 決策 A–F）
-- [ ] A1. `git fetch origin refs/tags/v0.23.0:refs/tags/upstream-v0.23.0 --no-tags`（✅ 已完成，commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`）
-- [ ] A2. `git checkout -b my-config-v0.23.0 upstream-v0.23.0`
-- [ ] A3. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`：
+- [x] A0. **取得使用者 Go-Sign** — ✅ 2026-11-06 收到「go」，A–F 全部採納建議方案
+- [x] A1. `git fetch origin refs/tags/v0.23.0:refs/tags/upstream-v0.23.0 --no-tags` — ✅ 已完成，commit `2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19`（`git rev-parse upstream-v0.23.0^{commit}` 一致）
+- [x] A2. `git checkout -b my-config-v0.23.0 upstream-v0.23.0` — ✅ 分支建立於 `2bd378ed1b`
+- [x] A3. Purge 官方 workflows，只留我們的 `ghcr-publish.yml`：
   ```bash
   find .github/workflows -type f ! -name 'ghcr-publish.yml' -delete
   git checkout my-config-v0.22.7 -- .github/workflows/ghcr-publish.yml
   git add .github/workflows
   git commit -m "chore(ci): purge official CI workflows; retain only ghcr-publish.yml"
   ```
-  - 預期：上游 **58 個** workflow → 保留 **1 個**
-- [ ] A4. Cherry-pick 零衝突自訂 commits：`45c07a7c6f`、`28607c420f`、`faa80374cc`、`20264ca395`、`a8491124a7`
-- [ ] A5. **Dockerfile 自訂層手動移植 7 hunks**（§3.1）— 對照 `git diff upstream-v0.23.0 my-config-v0.22.7 -- Dockerfile`
-- [ ] A6. 確認 `git diff upstream-v0.23.0 HEAD -- Dockerfile | grep -c '^@@'` = **7**，且 7 個自訂標記全數存在
-- [ ] A7. Cherry-pick 24 個歷史文檔 commits + 提交本工作表
-- [ ] A8. **tracked-but-ignored 遺失偵測**（比對 `git ls-files` 舊/新）— 目標 **LOST = 0 檔**
-- [ ] A9. 確認 `git log --oneline upstream-v0.23.0..HEAD` **完全線性**（merge commits = 0）
+  - ✅ 實測：上游 **58 個** workflow → 保留 **1 個**；commit `2a529f1e39`（59 files changed, **+154 / −13,404**）
+  - 📌 上游 v0.23.0 **不含** `ghcr-publish.yml`，我們的版本由 `my-config-v0.22.7` 檢入
+- [x] A4. Cherry-pick 零衝突自訂 commits：`45c07a7c6f`、`28607c420f`、`faa80374cc`、`20264ca395`、`a8491124a7` — ✅ **全部零衝突**（Dockerfile 那筆顯示 `Auto-merging Dockerfile`，亦無衝突）
+- [x] A5. **Dockerfile 自訂層移植 7 hunks** — ✅ 由 `34ca85b519` cherry-pick 套用（commit `8004b8a18b`，33 insertions / 3 deletions）
+- [x] A6. 驗證自訂層 — ✅ `git diff upstream-v0.23.0 HEAD -- Dockerfile | grep -c '^@@'` = **7**；15 個自訂標記（`openssh-server` / `rsync` / `locales` / `ssh-keygen -A` / `zh_TW.UTF-8` / `en_US.UTF-8` / `useradd -u 10000` / `--extra edge-tts` / `firecrawl` / `dingtalk` / `feishu` / `exa` / `/tmp/.npm-cache` / `ENV HOME=/opt/data` / `entrypoint-ssh.sh`）**全數存在**
+  - hunk 位置因上游 +2 行而平移：`@@ -490→492`、`@@ -515→517`（其餘不變），**零位置重疊**
+- [x] A7. Cherry-pick 30 個歷史文檔 commits + 提交本工作表 — ✅ **全部零衝突**；本工作表 commit `3d6cda5e0d`
+- [x] A8. **tracked-but-ignored 遺失偵測** — ✅ `old = 22,226` / `new = 22,523`；**LOST = 23 檔，逐檔驗證全部在 `upstream-v0.23.0` 亦不存在**（= 上游主動刪除：12 個 optional-skills、`apps/desktop/src/plugins/hermes-bots/canonical-group-list-gateway-open.test.tsx`、`ui-tui/src/components/petSprite.tsx` 及 9 個對應 website 文件）→ **真正遺失 = 0 檔**；7 個自訂檔全數在位
+- [x] A9. 線性檢查 — ✅ **merge commits = 0**，自訂 commits 合計 **38**（1 purge + 6 core + 30 docs + 1 worksheet）
 
 ### Phase B — 本地輕量驗證（嚴禁跑重型測試或本機 docker build）
 
-- [ ] B1. `git status` 乾淨
-- [ ] B2. `.github/workflows/` 僅有 `ghcr-publish.yml`
-- [ ] B3. 關鍵檔案完整性：`docker/entrypoint-ssh.sh` / `docker/stage2-hook.sh` / `docker-compose.yml` / `AGENTS.md` / `.env.example` 存在且行數合理
-- [ ] B4. `ghcr-publish.yml` dispatch input = **`tag_name`** + `platforms`
-- [ ] B5. `hermes_state_common.py` 的 `SCHEMA_VERSION = 32`、`FTS_STORAGE_VERSION = 3`
-- [ ] B6. `hermes_cli/config_defaults.py` 的 `_config_version = 52`
-- [ ] B7. `.env` 仍在 working tree 且未被 git track
-- [ ] B8. **上游 Dockerfile 僅註解變更** — `git diff upstream-v0.22.7 upstream-v0.23.0 -- Dockerfile` 逐行確認（實錘 R1）
+- [x] B1. `git status` 乾淨 — ✅ 工作區無未提交變更
+- [x] B2. `.github/workflows/` 僅有 `ghcr-publish.yml` — ✅
+- [x] B3. 關鍵檔案完整性 — ✅ 全數存在且行數與 v0.22.7 基線一致：`docker/entrypoint-ssh.sh` (13) / `docker/stage2-hook.sh` (874) / `docker-compose.yml` (19) / `AGENTS.md` (175) / `.env.example` (559) / `.github/workflows/ghcr-publish.yml` (154)
+- [x] B4. `ghcr-publish.yml` dispatch input — ✅ 實測 `tag_name`（description: `Image tag name (e.g. v2026.8.13)`）+ `platforms`（choice: all/amd64/arm64，default `all`）
+- [x] B5. `hermes_state_common.py` — ✅ 實測 `:289 SCHEMA_VERSION = 32`、`:312 FTS_STORAGE_VERSION = 3`
+- [x] B6. `hermes_cli/config_defaults.py` — ✅ 實測 `:2709 "_config_version": 52`
+- [x] B7. `.env` 仍在 working tree 且未被 git track — ✅ 本機 `.env`（51 B）存在、`git ls-files` 計數 **0**
+- [x] B8. **上游 Dockerfile 僅註解變更** — ✅ **實錘 R1**：`git diff upstream-v0.22.7 upstream-v0.23.0 -- Dockerfile` 的 `+`/`−` 行**全部是 `#` 註解**（2 個 hunk、11 行），過濾掉註解後輸出為空 → **零功能性變更**
+  - 另實測 `scripts/write_install_stamp.py` 在兩 tag **CLI flags 完全相同**（`--base-version` / `--display-version` / `--distance` / `--commit` …），我們 workflow 的呼叫方式不需修改
 
 ### Phase C — 推送 Fork + 觸發 GHCR Build
 
-- [ ] C1. `git push -u kuniakil my-config-v0.23.0`
-- [ ] C2. `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.0 -f tag_name=v0.23.0 -f platforms=all`
-  - 若回 **HTTP 422**（Actions has been disabled）→ **不要重試、不要清 cache**，請使用者在 `https://github.com/kuniakil/hermes-agent/actions` 點 re-enable 橫幅
-- [ ] C3. 驗證觸發的 run：`event=workflow_dispatch`、`headBranch=my-config-v0.23.0`、`headSha=**我們的 commit**`（非上游 `2bd378ed1b`）
+- [x] C1. `git push -u kuniakil my-config-v0.23.0` — ✅ `[new branch] my-config-v0.23.0 -> my-config-v0.23.0`
+- [x] C2. `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.0 -f tag_name=v0.23.0 -f platforms=all`
+  - ✅ **無 422**（Hard Rule 8 未觸發）；run URL → `https://github.com/kuniakil/hermes-agent/actions/runs/42129150541`
+  - `gh auth status`：`kuniakil`（GH_TOKEN），scopes 含 `workflow` ✅
+- [x] C3. 驗證觸發的 run — ✅ 實測 `event=workflow_dispatch`、`headBranch=my-config-v0.23.0`、`headSha=3d6cda5e0d`（= 本地 HEAD，**非**上游 `2bd378ed1b`）、`createdAt=2026-11-05T23:26:02Z`、`status=in_progress`
 - [ ] C4. **派背景子代理**監控 `gh run watch`（Hard Rule 9；主迴圈不得阻塞）
 - [ ] C5. 驗證 multi-arch image tags：`ghcr.io/kuniakil/hermes-agent:v0.23.0` 與 `latest` 皆為 multi-arch index（`linux/amd64` + `linux/arm64`）
 - [ ] C6. 確認 install stamp：`baseVersion` = `v0.23.0`（我們的 workflow 以 `--base-version "$TAG"` 傳入，`write_install_stamp.py` 的 CLI flags 在 v0.23.0 **完全未變**）
@@ -335,10 +339,10 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 
 ## 7. Go-Sign 確認區
 
-- [ ] §0.5 決策 **A**：目標版本 = **`v0.23.0`**
-- [ ] §0.5 決策 **B**：自訂 commits = **原樣 cherry-pick**（8 個核心）+ Dockerfile 7 hunks 手動移植
-- [ ] §0.5 決策 **C**：npm 漏洞 = **維持不修**（上游已於本版修補）
-- [ ] §0.5 決策 **D**：FTS layout = **維持不動**
-- [ ] §0.5 決策 **E**：先建 `20261106` 新備份，驗證完成後再請示清理 `20261104` 舊備份
-- [ ] §0.5 決策 **F**：`/opt/data/skills` 殘留（181 個）**本次不動**，另開議題
-- [ ] 使用者回覆「**Go**」後啟動 Phase 0 → A → B → C → D → E
+- [x] §0.5 決策 **A**：目標版本 = **`v0.23.0`** — ✅ 2026-11-06 採納
+- [x] §0.5 決策 **B**：自訂 commits = **原樣 cherry-pick**（6 個核心）+ Dockerfile 7 hunks — ✅ 2026-11-06 採納，全部零衝突
+- [x] §0.5 決策 **C**：npm 漏洞 = **維持不修**（上游已於本版修補）— ✅ 2026-11-06 採納
+- [x] §0.5 決策 **D**：FTS layout = **維持不動** — ✅ 2026-11-06 採納
+- [x] §0.5 決策 **E**：先建 `20261106` 新備份，驗證完成後再請示清理 `20261104` 舊備份 — ✅ 2026-11-06 採納（備份已建立並驗證）
+- [x] §0.5 決策 **F**：`/opt/data/skills` 殘留（181 個）**本次不動**，另開議題 — ✅ 2026-11-06 採納
+- [x] 使用者回覆「**Go**」（2026-11-06）後啟動 Phase 0 → A → B → C → D → E
