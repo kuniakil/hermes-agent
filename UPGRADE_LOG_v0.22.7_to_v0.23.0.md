@@ -203,6 +203,18 @@ Camofox MCP:
   → HTTP 200，耗時 6.3s，模型成功呼叫 bash 工具並回傳 "hermes-upgrade-smoke-v0230" ✅
 - DB 同步寫入（sessions 133→134、messages 18,044→18,049）、integrity ok
 - API 端點：/health /v1/health /v1/models /v1/capabilities /v1/toolsets /api/sessions 皆 200
+
+真實 Telegram 訊息往返（使用者實測，2026-11-06 07:58 台北時間）:
+- 使用者在 Telegram DM（chat 830338761）送出「系統已經升級，做一下檢查」
+- inbound: platform=telegram user=Michael Lee chat=830338761 ✅
+- Rehydrated persisted /model override: model=MiniMax-M3 provider=minimax
+  → B1 單 gateway 架構下，既有 session 與 model 偏好完整還原 ✅
+- response ready: time=66.1s api_calls=4 response=2404 chars ✅
+- outbound: [Telegram] Sending response (2404 chars) to 830338761（送出後無任何錯誤）✅
+- DB: messages 18,052→18,059（+7）、messages_fts = 18,059 = messages、integrity ok ✅
+- sessions = 134 未變（正常）—— 續接既有 session 20260708_133022_65a00a95，非新建
+  → 這正是 B1「一個 gateway 擁有每一場對話」的預期行為 ✅
+- 開機後 ERROR = 0（排除我方 /v1/skills 探測）✅
 ```
 
 ---
@@ -356,6 +368,6 @@ vulns: { info: 0, low: 0, moderate: 21, high: 2, critical: 0, total: 23 }
 
 | # | 項目 | 狀態 |
 |---|---|---|
-| **D10b** | **真實 Telegram 訊息往返驗證** — 需使用者實測回報（`messages` +N、`sessions` +1、`messages_fts` 同步、0 ERROR） | ⏳ 使用者已同意實測，等待回報 |
+| **D10b** | **真實 Telegram 訊息往返驗證** | ✅ **使用者實測通過**（2026-11-06 07:58 台北時間，詳見 §4） |
 | **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中（基線已記錄：RESTARTS 0、400Mi、0 ERROR；到期 2026-11-06 23:39Z） |
 | **E4** | 是否刪除舊備份 `~/backups/hermes-20261104/` | ✅ **已完成**（使用者授權後刪除，回收 176MB） |
