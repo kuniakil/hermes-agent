@@ -6,7 +6,7 @@
 - **Remote**：`origin` = 官方（NousResearch）、`kuniakil` = 個人 fork（⚠️ 與 OpenClaw 相反）
 - **發布模型**：`my-config-v0.23.0` 分支為 source of truth，由 `ghcr-publish.yml`（dispatch input **`tag_name`**）建置 `ghcr.io/kuniakil/hermes-agent:v0.23.0`
 - **目前上線版本**：✅ **`v0.23.0`**（K3s n100，pod `hermes-agent-f9496b576-wcxg8`，Running 1/1，RESTARTS 0，image digest `sha256:3aeff98b…`）
-- **狀態**：✅ **升級完成，Phase E 收尾中**（Go-Sign 2026-11-06 已收到；Phase 0 / A / B / C / D1–D10a 全綠；待 D10b 使用者 Telegram 實測回報 + D11 24h 觀察）
+- **狀態**：✅ **升級完成，Phase E 收尾中**（Go-Sign 2026-11-06 已收到；Phase 0 / A / B / C / D1–D10b 全綠（含使用者 Telegram 實測）；僅待 D11 24h 觀察）
 - **日期**：2026-11-06
 
 ---
@@ -323,7 +323,15 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
   - DB 同步寫入：`sessions 133→134`、`messages 18,044→18,049`、`messages_fts = 18,049` = messages、`integrity ok` ✅
   - API 端點實測：`/health` `/v1/health` `/v1/models` `/v1/capabilities` `/v1/toolsets` `/api/sessions` **皆 200**；`/v1/skills` → **500（上游既有缺陷，見 §8）**；`/v1/models/hermes-agent` → 404（非既有路由，忽略）
   - skills 統計：CLI `hermes skills list` 正常 → **95 enabled、0 disabled**（21 hub-installed、1 builtin、73 local）；`find_all_skills()` 直接呼叫正常 → **96 筆** → **核心 skill 載入路徑完全不受影響**
-- [ ] D10b. **真實 Telegram 訊息往返驗證** — ⏳ **待使用者實測回報**
+- [x] D10b. **真實 Telegram 訊息往返驗證** — ✅ **使用者實測通過**（2026-11-06 07:58 台北時間）
+  - 使用者在 Telegram DM（chat `830338761`）送出：「系統已經升級，做一下檢查」
+  - **inbound**：`2026-11-06 07:58:35,791 INFO gateway.run: inbound message: platform=telegram user=Michael Lee chat=830338761 msg='系統已經升級，做一下檢查'`
+  - **session 續接正確**：`Rehydrated persisted /model override for session=agent:main:telegram:dm:830338761: model=MiniMax-M3 provider=minimax` → **B1 單 gateway 架構下既有 session 與 model 偏好完整還原**
+  - **agent 回合**：`response ready: platform=telegram … time=66.1s api_calls=4 response=2404 chars`
+  - **outbound**：`2026-11-06 07:59:41,913 INFO gateway.platforms.base: [Telegram] Sending response (2404 chars) to 830338761`（送出後**無任何錯誤**）
+  - **DB 同步**：`messages 18,052 → 18,059`（+7：user 1 / assistant 4 / tool 3），**`messages_fts = 18,059` = messages**，`integrity = ok`
+  - **sessions = 134 未變**（正常）：Telegram DM 續接既有的 `20260708_133022_65a00a95` session，**不是新建 session** → 這正是 B1「一個 gateway 擁有每一場對話」的預期行為
+  - **ERROR = 0**（開機後，排除我方 `/v1/skills` 探測）
 - [ ] D11. **部署後 24h 觀察**：ERROR/CRITICAL 計數 = 0、`RESTARTS = 0`、記憶體趨勢平穩
   - 📌 **基線（2026-11-06 07:52 實測，開機 ~11 分鐘後）**：`pod startedAt = 2026-11-05T23:39:21Z`、`RESTARTS = 0`、`kubectl top` → CPU 15m / MEM **400Mi**、`gateway.log` 自開機起 ERROR = 2（**全為我方 `/v1/skills` 探測**，排除後 **0**）、CRITICAL = **0**
   - 觀察窗口到期：**2026-11-06 23:39Z**（開機 +24h）
