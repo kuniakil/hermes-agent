@@ -369,5 +369,91 @@ vulns: { info: 0, low: 0, moderate: 21, high: 2, critical: 0, total: 23 }
 | # | 項目 | 狀態 |
 |---|---|---|
 | **D10b** | **真實 Telegram 訊息往返驗證** | ✅ **使用者實測通過**（2026-11-06 07:58 台北時間，詳見 §4） |
-| **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中（基線已記錄：RESTARTS 0、400Mi、0 ERROR；到期 2026-11-06 23:39Z） |
+| **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中（基線已記錄：RESTARTS 0、400Mi、0 ERROR；到期 2026-11-07 07:39 台北時間，已排定 durable cron `e5293376` 於 07:47 驗收） |
 | **E4** | 是否刪除舊備份 `~/backups/hermes-20261104/` | ✅ **已完成**（使用者授權後刪除，回收 176MB） |
+
+---
+
+## 11. 附錄 A — 對「Hermes 容器內自我檢查報告」的獨立稽核（2026-11-06）
+
+> 容器內的 Hermes agent 主動產出了一份自我檢查報告並向使用者提問。為避免誤判，以下逐項以**獨立量測**覆核。結論：**4 項指控中 3 項為誤判或非本次升級引入，1 項成立且已處理。**
+
+### 11.1 「磁碟 2 天 +83G」— ✅ 成立，但**與 Hermes 無關**（已處理）
+
+Hermes 觀察到的是**節點共用檔案系統**的增長，不是 `/opt/data`。實測：
+
+| 路徑 | 大小 | 說明 |
+|---|---|---|
+| `/opt/data`（Hermes 全部資料） | **3.5G** | home 1.4G / state.db 176M / sessions 153M / agent-reach 134M / logs 33M / .cache 1.5G |
+| `/data/services/k8s-media` | 243G | 其中 **「Pursuit of Jade」40 集（40 檔、每檔 1.9–2.2G、mtime 2026-11-06）＝ 75G**，由 Sonarr/qBittorrent 寫入 `/data/services/k8s-media/tv/` |
+| `/data/services/immich` | 141G | 相簿服務 |
+| `/home/kuniaki/下載` | 76G | |
+| containerd overlayfs | 59G | 其中 **4 層 hermes image** 堆疊：v0.22.5 1.1G / v0.22.6 1.16G / v0.22.7 1.16G / v0.23.0 1.16G |
+
+→ **真正的增長來源是 Sonarr 拉劇**，不是 Hermes。Hermes 的磁碟佔用本身完全穩定。
+
+**處置**：以 `crictl rmi --prune` 清除未使用映像，節點檔案系統 **592G / 35% → 570G / 33%（回收 22G）**。
+
+安全性驗證（回收前確認）：
+- v0.22.5 / v0.22.6 / v0.22.7 仍存在於 GHCR，**可重新拉取** → v0.22.7 回滾路徑完好；
+- 回收後 **0 個 pod 受影響**（全部 Running/Completed），hermes pod 維持 Running 1/1、RESTARTS 0；
+- 節點上現僅保留 `ghcr.io/kuniakil/hermes-agent:v0.23.0`（1.16G）。
+
+### 11.2 「doctor 三個 workspace 都有顯示 ＝ node_modules 狀態改變」— ❌ **誤判**
+
+`hermes_cli/doctor_tools.py` 在 `upstream-v0.22.7` 與 `upstream-v0.23.0` 之間 **零 diff**；`tools/memory_tool.py` / `tools/memory_tool_store.py` 亦 **零 diff**。
+
+doctor 的 gate 是 `PROJECT_ROOT/node_modules` **是否存在**（存在，內容僅 `typescript`），而 `/opt/hermes/web/node_modules` 與 `/opt/hermes/ui-tui/node_modules` **在 image 中本來就不存在**。workspace 那一列是 npm 以 `--workspace` 過濾器解析**根 lockfile** 的結果，**不是已安裝樹的掃描結果**。
+
+容器內實測（`npm audit --package-lock-only`）：
+
+| Scope | v0.22.7 | v0.23.0 |
+|---|---|---|
+| root `--workspaces=false` | 10 moderate + **1 high** | 10 moderate + **0 high** |
+| `--workspace web` | — | 3 moderate + 0 high |
+| `--workspace ui-tui` | — | 0 |
+| root 全量（無過濾） | — | 21 moderate + 2 high = 23 |
+
+→ 「23 個 / 2 high」是**跨 scope 聚合**的呈現數字；單一 scope 的真實數字是 10 moderate + 0 high。
+→ **v0.22.7 的 root-scope 1 個 high 已被上游修掉**（undici 6.29.0→6.29.1 / 7.30.0→7.30.1、zod 4.6.5→4.6.7）。「4→2 high」的敘述方向正確；「moderate 上升」只是聚合噪音，**非回歸**。
+
+### 11.3 殘餘 2 個 high 為 dev-only，runtime 暴露面仍為 0
+
+`follow-redirects 1.16.0-1.16.1` ← `node_modules/axios`（lockfile 標記 `dev: true`）
+`joi 18.0.0-18.3.0` ← `node_modules/wait-on`（lockfile 標記 `dev: true`）
+
+兩者皆 **devDependency**，不打進 runtime image → **實際暴露面 = 0**（我們亦不部署 Desktop / Photon sidecar / Webapp）。
+
+image 內已確認 undici 修補到位：`node_modules/undici 7.30.1`、`node_modules/node-gyp/node_modules/undici 6.29.1`、`ui-tui/node_modules/undici 6.29.1`；`ui-tui/dist/entry.js` 仍 bundle undici，但版本已是修補版，且僅連本機 gateway `127.0.0.1:8642`。
+
+### 11.4 「MEMORY.md 超限（2382/2200）」— ⚠️ 成立，但**非 v0.23.0 引入**
+
+- `/opt/data/memories/MEMORY.md` = 3620 bytes / **2382 chars**（中文 UTF-8），vs `memory_char_limit` 預設 **2200**（`hermes_cli/config_defaults.py:1304`）。
+- 該 limit 預設值在兩個 tag 之間 **未變**；`tools/memory_tool.py` / `tools/memory_tool_store.py` **零 diff**。
+- `agent/memory_provider.py` 的 +28 行與此無關（profile 生命週期 hook：`on_profile_created` / `on_profile_renamed` / `read_config_fields` / `write_config_fields`）。
+- 檔案最後修改時間 **2026-10-24 22:11** —— 在 v0.22.7 時期就已超限，**與本次升級無關**。
+- 內容共 6 個 `## ` 條目：Dify 知識庫 RAG 架構、n8n API、新北市停車（TDX 空、NTPC Open Data 有）、Michael 個人背景、台灣老站診斷規則、驗證方法論（2026-10-22 Pi-Agent 教訓）。
+- 另有一份**不同**的 `/opt/data/.hermes/memories/MEMORY.md`（421 bytes），勿混淆。
+
+→ **處置**：由容器內 Hermes agent 自行精簡（它已宣告「我立刻精簡」）。截至本附錄撰寫時檔案尚未變動（仍 2382 chars、mtime 未變），故此項仍為**未收尾**，不影響升級驗收。
+
+### 11.5 「Hermes Relay drained 2 orphaned scope(s)」— ✅ **良性且為既有現象**
+
+出自 `/opt/data/logs/errors.log`，時間戳 2026-10-24 18:20 / 20:48 / 22:24、**2026-11-04 07:39**（**當時還在 v0.22.7**）、2026-11-06 07:45:07（本次 api_server 回合）。每回合會出現一次，**非新故障**。
+
+### 11.6 `GET /v1/skills` 500 — 結論一致，但應稱「上游既有缺陷」而非「v0.23.0 的 bug」
+
+Hermes 自行偵測到的 `include_editorial` TypeError 與本文件 §6 的分析**完全吻合**（`api_server.py:2388` 傳 `include_editorial=True`，但 `skills_tool.py:277` 的 `find_all_skills` 只接受 `skip_disabled`）。
+
+唯一需要校正的措辭：`upstream-v0.22.7` 與 `upstream-v0.23.0` 的該段程式碼**逐位元組相同**，上游 6 個相關 issue 自 2026-09-12 起 OPEN → 這是**上游既有缺陷**，**不是 v0.23.0 引入的回歸**。
+
+### 11.7 稽核後的整體狀態
+
+| 項目 | 判定 | 處置 |
+|---|---|---|
+| 磁碟 +83G | ✅ 成立，非 Hermes 造成 | 已回收 22G（592G→570G / 35%→33%） |
+| doctor workspace 顯示 | ❌ 誤判 | 已以量測澄清，無需動作 |
+| npm 23 個 / 2 high | ⚠️ 數字為跨 scope 聚合 | 真實 root scope = 10 moderate + 0 high；2 high 為 dev-only，暴露 0 |
+| MEMORY.md 超限 | ⚠️ 成立，v0.22.7 時期既有 | 交由容器內 Hermes 自行精簡（尚未執行） |
+| Relay drained scopes | ✅ 良性既有 | 無需動作 |
+| `/v1/skills` 500 | ✅ 上游既有缺陷 | 不修，待上游修復 |
