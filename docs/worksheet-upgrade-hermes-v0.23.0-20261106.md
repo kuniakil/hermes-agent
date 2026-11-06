@@ -334,7 +334,8 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
   - **ERROR = 0**（開機後，排除我方 `/v1/skills` 探測）
 - [ ] D11. **部署後 24h 觀察**：ERROR/CRITICAL 計數 = 0、`RESTARTS = 0`、記憶體趨勢平穩
   - 📌 **基線（2026-11-06 07:52 實測，開機 ~11 分鐘後）**：`pod startedAt = 2026-11-05T23:39:21Z`、`RESTARTS = 0`、`kubectl top` → CPU 15m / MEM **400Mi**、`gateway.log` 自開機起 ERROR = 2（**全為我方 `/v1/skills` 探測**，排除後 **0**）、CRITICAL = **0**
-  - 觀察窗口到期：**2026-11-06 23:39Z**（開機 +24h）
+  - 觀察窗口到期：**2026-11-06 23:39Z**（開機 +24h）＝ 2026-11-07 07:39 台北時間
+  - 📌 已排定 **durable cron `e5293376`**（one-shot，Nov 7 07:47）自動執行本項驗收並回填本工作表
   - 驗收指令：`kubectl --context n100-cf -n hermes top pod hermes-agent-f9496b576-wcxg8` + `kubectl --context n100-cf -n hermes exec hermes-agent-f9496b576-wcxg8 -- sh -lc 'awk "\$0 >= \"2026-11-06 07:41\"" /opt/data/logs/gateway.log | grep " ERROR \| CRITICAL " | grep -v "/v1/skills" | wc -l'`（期望 **0**）
   - ⚠️ 對照：全 log 的 **812 筆歷史 ERROR** 全部落在 `2026-10-07` ~ `2026-11-03`（每日 2–4 筆）；`2026-11-04` 起為 0
 
@@ -360,6 +361,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 | **GitHub Actions Fork 自動停用（HTTP 422）** | 🟡 中（外部啟發式） | 若觸發時回 422，直接請使用者在 `/actions` 點擊 re-enable 橫幅（Hard Rule 8） |
 | **npm 漏洞** | 🟢 無（既有決策，且上游已修補） | v0.23.0 內含 undici 6.29.1 / 7.30.1 / zod 4.6.7 / fast-uri 3.1.9；容器 runtime 暴露面仍為 0 |
 | **`GET /v1/skills` 恆回 500** | 🟢 **非本次引入**（上游既有缺陷） | 逐 tag 比對 `upstream-v0.22.7` 與 `upstream-v0.23.0` 程式碼**完全相同**；6 個上游 issue 自 2026-09-12 起全為 OPEN。我們無第一方消費路徑（核心 `find_all_skills()` 與 CLI `hermes skills list` 實測正常）→ **不修**，見 §8 |
+| **節點共用檔案系統磁碟增長**（非 Hermes 造成） | 🟢 低 | `/opt/data` 僅 3.5G 且穩定；主因為 Sonarr 拉劇 75G + containerd 4 層 image。已回收 22G（592G→570G / 35%→33%）；v0.22.5–7 仍在 GHCR 可回拉，回滾路徑完好 |
 
 ---
 
@@ -463,3 +465,23 @@ TypeError: find_all_skills() got an unexpected keyword argument 'include_editori
 gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
   --ref my-config-v0.23.0 -f tag_name=v0.23.0 -f platforms=all
 ```
+
+---
+
+## 10. 對「Hermes 容器內自我檢查報告」的獨立稽核（2026-11-06）
+
+> 容器內的 Hermes agent 主動向使用者提問四項疑點。逐項以**獨立量測**覆核後：1 項成立且已處理、2 項為誤判、1 項成立但非本次升級引入。完整證據見 `UPGRADE_LOG_v0.22.7_to_v0.23.0.md` §11。
+
+| Hermes 的指控 | 稽核判定 | 依據 |
+|---|---|---|
+| 「磁碟 2 天 +83G」 | ✅ **成立，但與 Hermes 無關**（已處理） | `/opt/data` 全部資料僅 **3.5G**；真正來源是 Sonarr 寫入 `/data/services/k8s-media/tv/` 的 75G「Pursuit of Jade」+ containerd 4 層 hermes image。已 `crictl rmi --prune` 回收 **22G**（592G/35% → 570G/33%），v0.22.5–7 仍在 GHCR 可回拉，0 pod 受影響 |
+| 「doctor 三個 workspace 都有顯示 ＝ node_modules 狀態改變」 | ❌ **誤判** | `hermes_cli/doctor_tools.py` 兩 tag **零 diff**；gate 只是 `PROJECT_ROOT/node_modules` 存在，`web/`、`ui-tui/` 的 node_modules 在 image 中本就不存在。workspace 列是 npm 以 `--workspace` 過濾**根 lockfile** 的結果，非已安裝樹掃描 |
+| 「npm 真實 23 個（2 high / 21 moderate）」 | ⚠️ **數字為跨 scope 聚合** | 單 scope 實測：root `--workspaces=false` = **10 moderate + 0 high**（v0.22.7 為 10 moderate + **1 high**，上游已修）、`--workspace web` = 3 moderate + 0 high、`--workspace ui-tui` = 0。殘餘 2 high（`follow-redirects`←axios、`joi`←wait-on）lockfile 皆標 `dev: true` → **runtime 暴露面 = 0** |
+| 「MEMORY.md 超限（2382/2200）」 | ⚠️ **成立，但 v0.22.7 時期既有** | `memory_char_limit` 預設 2200 兩 tag 未變；`tools/memory_tool*.py` **零 diff**；檔案 mtime 為 **2026-10-24**。→ 交由容器內 Hermes 自行精簡（截至稽核時尚未執行，仍 2382 chars） |
+| 「Hermes Relay drained 2 orphaned scope(s)」 | ✅ **良性既有現象** | `errors.log` 中 2026-10-24 與 **2026-11-04（當時還是 v0.22.7）** 已有同樣紀錄，每回合一次，非新故障 |
+| 「`/v1/skills` 500 ＝ v0.23.0 官方 bug」 | ✅ 結論一致，**措辭需校正** | 兩個 tag 程式碼逐位元組相同 + 上游 6 issue 自 2026-09-12 起 OPEN → 屬**上游既有缺陷**，**非 v0.23.0 回歸**（見 §8） |
+
+### 10.1 稽核後剩餘待辦
+
+- [ ] 容器內 Hermes 精簡 `/opt/data/memories/MEMORY.md`（2382 → ≤2200 chars）— 由 Hermes 自行執行，**不影響升級驗收**；本次不代為改寫（該檔為 agent 自身記憶，非本工作表範疇）
+- [ ] D11 24h 觀察驗收 — durable cron `e5293376`，2026-11-07 07:47 觸發（自動檢查 RESTARTS / 記憶體趨勢 / ERROR-CRITICAL / `messages == messages_fts`）
