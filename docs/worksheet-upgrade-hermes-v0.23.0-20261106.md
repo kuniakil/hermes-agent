@@ -335,7 +335,7 @@ git merge-tree --write-tree --merge-base=upstream-v0.22.7 upstream-v0.23.0 my-co
 - [ ] D11. **部署後 24h 觀察**：ERROR/CRITICAL 計數 = 0、`RESTARTS = 0`、記憶體趨勢平穩
   - 📌 **基線（2026-11-06 07:52 實測，開機 ~11 分鐘後）**：`pod startedAt = 2026-11-05T23:39:21Z`、`RESTARTS = 0`、`kubectl top` → CPU 15m / MEM **400Mi**、`gateway.log` 自開機起 ERROR = 2（**全為我方 `/v1/skills` 探測**，排除後 **0**）、CRITICAL = **0**
   - 觀察窗口到期：**2026-11-06 23:39Z**（開機 +24h）＝ 2026-11-07 07:39 台北時間
-  - 📌 已排定 **durable cron `e5293376`**（one-shot，Nov 7 07:47）自動執行本項驗收並回填本工作表
+  - 📌 **不排自動監控**（2026-11-06 決定）：使用者判斷「日常使用即為 D11 觀察」，Telegram 往返正常即可代表服務健康。改為**按需人工查核**（指令見下方），不設 cron / systemd timer
   - 驗收指令：`kubectl --context n100-cf -n hermes top pod hermes-agent-f9496b576-wcxg8` + `kubectl --context n100-cf -n hermes exec hermes-agent-f9496b576-wcxg8 -- sh -lc 'awk "\$0 >= \"2026-11-06 07:41\"" /opt/data/logs/gateway.log | grep " ERROR \| CRITICAL " | grep -v "/v1/skills" | wc -l'`（期望 **0**）
   - ⚠️ 對照：全 log 的 **812 筆歷史 ERROR** 全部落在 `2026-10-07` ~ `2026-11-03`（每日 2–4 筆）；`2026-11-04` 起為 0
 
@@ -484,4 +484,14 @@ gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
 ### 10.1 稽核後剩餘待辦
 
 - [ ] 容器內 Hermes 精簡 `/opt/data/memories/MEMORY.md`（2382 → ≤2200 chars）— 由 Hermes 自行執行，**不影響升級驗收**；本次不代為改寫（該檔為 agent 自身記憶，非本工作表範疇）
-- [ ] D11 24h 觀察驗收 — durable cron `e5293376`，2026-11-07 07:47 觸發（自動檢查 RESTARTS / 記憶體趨勢 / ERROR-CRITICAL / `messages == messages_fts`）
+- [ ] D11 24h 觀察驗收 — **不排自動監控**（2026-11-06 決定）；改為按需人工查核。查核指令（4 項：RESTARTS / 記憶體 / ERROR-CRITICAL / `messages == messages_fts`）：
+  ```bash
+  kubectl --context n100-cf -n hermes get pod hermes-agent-f9496b576-wcxg8 \
+    -o jsonpath='{.status.containerStatuses[0].restartCount}'
+  kubectl --context n100-cf -n hermes top pod hermes-agent-f9496b576-wcxg8
+  kubectl --context n100-cf -n hermes exec hermes-agent-f9496b576-wcxg8 -- sh -lc \
+    'awk "\$0 >= \"2026-11-06 07:41\"" /opt/data/logs/gateway.log | grep " ERROR \| CRITICAL " | grep -v "/v1/skills" | wc -l'
+  kubectl --context n100-cf -n hermes exec hermes-agent-f9496b576-wcxg8 -- python3 -c \
+    "import sqlite3;c=sqlite3.connect('/opt/data/state.db');print(c.execute('PRAGMA integrity_check').fetchone()[0],c.execute('SELECT COUNT(*) FROM messages').fetchone()[0],c.execute('SELECT COUNT(*) FROM messages_fts').fetchone()[0])"
+  ```
+  基準（2026-11-06 08:25 實測）：`0` / `470Mi` / `0` / `ok 18067 18067`
