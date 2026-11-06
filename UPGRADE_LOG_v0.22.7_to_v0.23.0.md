@@ -369,7 +369,7 @@ vulns: { info: 0, low: 0, moderate: 21, high: 2, critical: 0, total: 23 }
 | # | 項目 | 狀態 |
 |---|---|---|
 | **D10b** | **真實 Telegram 訊息往返驗證** | ✅ **使用者實測通過**（2026-11-06 07:58 台北時間，詳見 §4） |
-| **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中（基線已記錄：RESTARTS 0、400Mi、0 ERROR；到期 2026-11-07 07:39 台北時間，已排定 durable cron `e5293376` 於 07:47 驗收） |
+| **D11** | **部署後 24h 觀察**：ERROR/CRITICAL = 0、`RESTARTS = 0`、記憶體趨勢平穩 | ⏳ 觀察中（基線已記錄：RESTARTS 0、400Mi，2026-11-06 08:25 複測 470Mi、0 ERROR、DB ok / messages 18067 == messages_fts 18067）。**不排自動監控** —— 2026-11-06 決定：日常 Telegram 往返正常即代表服務健康，D11 改為**按需人工查核**（指令見工作表 §10.1）；原排定的 durable cron 與節點端 timer 均已撤除 |
 | **E4** | 是否刪除舊備份 `~/backups/hermes-20261104/` | ✅ **已完成**（使用者授權後刪除，回收 176MB） |
 
 ---
