@@ -27,8 +27,10 @@
 > 1. **DB schema 32→33 是單向的**：移除已淘汰的 `messages_fts_cjk` 索引（改走 trigram）、重標 `source='subagent'` 的 session、加一個一次性 legacy-refusal 修復 → **回退必須還原備份**，不能只改回舊 image；
 > 2. **但對我們而言 v33 近乎 no-op**：我們的 v32 DB **本來就沒有** `messages_fts_cjk` 索引（Phase 0 實測 `sqlite_master` 查 `%cjk%` → 空），CJK 搜尋當下就已經走 trigram → 移除動作回傳 `False`，**不寫 log 屬正確行為**；
 > 3. **自訂層 100% 零衝突**：上游 pnpm 化的 Dockerfile 改動與我們 14 個自訂 hunk **完全不重疊**，`git apply -3` 乾淨套用（+33/−3）；49 個自訂 commits、**0 merges**、0 conflicts；
-> 4. **線上全面檢查全綠**：D3–D9 / D11 全數通過 —— schema=33、integrity ok、sessions/messages 數量與升前**完全一致**、中文搜尋經 trigram 命中、D8 config 未被改動、D11 實測 catalog 2.25 MiB > 2 MiB 舊上限證明 16 MiB 修正生效；
-> 5. **一個上游缺陷（非我們造成）**：v0.23.1 改用 pnpm 後，`pm/lock.json` 多出 `pnpm` 條目，但 runtime image 從未安裝它 → 每次啟動多一行 `pnpm: not installed or outdated` 警告。**純外觀，gateway 運作正常。**
+> 4. **線上全面檢查全綠**：D3–D9 / D11 全數通過 —— schema=33、integrity ok、sessions/messages 數量與升前**完全一致**、中文搜尋經 trigram 命中、D8 config 未被改動、D11 實測 catalog 2.25 MiB > 2 MiB 舊上限證明 16 MiB 修正生效；**D10 使用者 Telegram 實測往返通過**（§5）；
+> 5. **兩個上游既有問題（非本次升級造成，維持不修）**：
+>    - v0.23.1 改用 pnpm 後，`pm/lock.json` 多出 `pnpm` 條目，但 runtime image 從未安裝它 → 每次啟動多一行 `pnpm: not installed or outdated` 警告。**純外觀，gateway 運作正常；我們的 Dockerfile 不加 pnpm（上游明載 pnpm 不進 runtime image）**（§6.1 / §6.6）；
+>    - `GET /v1/skills` 恆回 HTTP 500（`find_all_skills()` 簽章不符）—— v0.23.0 與 v0.23.1 逐位元組相同、`origin/main` 未修、對我們無影響（§6.8）。
 
 ---
 
@@ -155,7 +157,7 @@ comm -12 <(git diff --name-only upstream-v0.23.0..my-config-v0.23.0 | sort -u) \
 | `hermes doctor` | 21 ✓ / 7 ⚠ / `Found 1 issue(s)` — **與升前基線完全一致**（⚠ 為既有狀態：5 個 system dependency + 3 個缺 API key） |
 | s6 supervision | `s6-svscan → rc.init top → main-wrapper.sh → profile-gateways → s6-svscan /run/hermes-service → gateway-default → gateway python` ✅ 完整 |
 | 開機後 ERROR / CRITICAL | **0**（`/opt/data/logs/errors.log` 第 16713 行之後） |
-| Telegram | `10:32:52 Connected to Telegram (polling mode)` ✅ |
+| Telegram | `10:32:52 Connected to Telegram (polling mode)` ✅；**使用者實測往返通過**（10:48 CST，由 Telegram 下達指令並收到完整回覆） |
 | 中文搜尋 | trigram `MATCH '繁體中文'` → **21** hits（base FTS 同詞僅 5）；`SessionDB.search_messages('繁體中文')` → 5 rows，高亮 `>>>繁體中文<<<` 正確；`'升級'`、`'記憶'` 各 5 rows ✅ |
 | locale | `C.utf8` / `en_US.utf8` / `zh_TW.utf8` ✅ |
 | 工具鏈 | `sshd` `/usr/sbin/sshd`、`rsync`、`tini`、`tmux`、`ffmpeg` `/usr/local/bin/ffmpeg`、`ffprobe` ✅ |
@@ -206,6 +208,93 @@ comm -12 <(git diff --name-only upstream-v0.23.0..my-config-v0.23.0 | sort -u) \
 
 - **影響：純外觀**。一行 stderr + 一條 gateway WARNING。gateway 正常運作（`Turn machinery warmed in 2.0s (21 tool schema(s))`）。
 - **處置：不動**。我們不自行在 Dockerfile 加 `ensure("pnpm")` —— 那會讓我們的 image 偏離 upstream，應由上游修（把 pnpm 加進 runtime_base 的 ensure 清單，或標為 optional / internal）。若日後確認要本地 workaround，必須另開一個可追溯的 commit 並記錄於本升級日誌。
+
+### 6.6 「v0.23.1 是否改用 pnpm？我們的 Dockerfile 要不要加 pnpm？」
+
+容器內 agent 的自我檢查報告提出了這個問題（並建議在容器內驗證 `packageManager` 欄位）。完整答覆：
+
+**Q1：v0.23.1 是否改用 pnpm？→ 是。**
+
+- 上游 commit `7062229090 chore(js): switch the workspaces from npm to pnpm`
+- 容器內實測：`/opt/hermes/pnpm-lock.yaml`（464,400 B）與 `/opt/hermes/pnpm-workspace.yaml` 存在；`/opt/hermes/package-lock.json` **已不存在**
+
+**Q2：我們的 Dockerfile 需要加 pnpm？→ 不需要，且不該加。**
+
+上游 Dockerfile 自己就寫明了（`Dockerfile:330-333`）：
+
+```dockerfile
+# Frontend dependencies never enter the runtime layers.
+FROM runtime_base AS frontend_build
+# pnpm installs the workspaces; nothing in the runtime image runs it, so only
+# the build stages (this one and webapp_build) stage it.
+```
+
+pnpm 只在 `frontend_build`（`Dockerfile:334`）與 `webapp_build`（`Dockerfile:362`）兩個 stage 被 `ensure("pnpm")`。**runtime image 內沒有任何東西會執行它**（容器內實測：`which pnpm` → 不存在；`/usr/local/bin/pnpm` → 不存在；`_pm_tool_path("pnpm")` → `None`）。
+
+在 runtime_base 加 pnpm 會同時造成四個後果，全為負：
+
+| 後果 | 說明 |
+|---|---|
+| 違背上游明載設計 | 上游註解直說「nothing in the runtime image runs it」 |
+| image 偏離 upstream | 我們的分支定位是「官方程式碼 + 自訂層」，不是「官方 + 自訂 + 對上游設計的異議」 |
+| 體積增加 | pnpm 12.15.0 + 其閉包 |
+| **仍然無效** | 加上 pnpm 也**不會**讓 web / ui-tui 的 audit row 回來（見 §6.7） |
+
+**真正的上游缺陷在 `pm`，不在 Dockerfile**：`pm/lock.json` 把 pnpm 列為一般可安裝套件，但 `pm.drift()` 拿 lockfile 的**全部**套件名稱去比對 runtime facts，只跳過 `package.optional` / `package.internal` 的套件 —— pnpm 兩者皆非 → 每次報 "not installed or outdated"。上游修法（擇一）：(a) pnpm 加進 runtime_base 的 ensure 清單；(b) lockfile 把 pnpm 標為 build-only / optional；(c) `drift()` 忽略不在目標 facts 裡的 build-time 套件。
+
+### 6.7 doctor 的 npm/pnpm audit 列消失 — 上游兩個獨立改動疊加，**不是** pnpm 缺失的連帶效果
+
+`_check_npm_audit`（`hermes_cli/doctor_tools.py:439`）的 gate 在兩版之間**同時**變了兩件事：
+
+| | v0.23.0 | v0.23.1 |
+|---|---|---|
+| 工具 | `npm` | `pnpm`（WhatsApp bridge 仍用 `npm`） |
+| 存在性檢查 | `((PROJECT_ROOT if audit_extra else npm_dir) / "node_modules").exists()` — **只查 root** | `tool and (tree / "node_modules").exists()` — **查該 workspace 自己的** |
+
+v0.23.1 的三個 pnpm row 各被**兩個獨立條件**擋掉：
+
+1. `pnpm_bin = _pm_tool_path("pnpm")` → `None` → `tool` falsy → 跳過（連 "Root npm package" 也是）
+2. `(PROJECT_ROOT / "web" / "node_modules").exists()` → **False**（容器內實測 `web/node_modules` 與 `ui-tui/node_modules` **不存在**）→ **即使裝了 pnpm，web / ui-tui 兩列仍然不會出現**
+
+**淨效果是改善。** v0.23.0 升級日誌 §9.4 早就記載：「`web` / `ui-tui` workspace 沒有 node_modules，容器內 `hermes doctor` 報的 npm 數字**不可信**」。v0.23.1 把這些 JS 依賴樹**整個移出 runtime image**（`Dockerfile:330`：「Frontend dependencies never enter the runtime layers」）→ 那批帶漏洞的套件**本來就不在 image 裡**，audit row 消失是**誠實**的結果，而不是檢查被跳過。
+
+容器內 JS tree 現況（實測）：
+
+| 路徑 | 狀態 |
+|---|---|
+| `/opt/hermes/node_modules` | 存在，**1 個 entry**（僅 typescript） |
+| `/opt/hermes/web/node_modules` | **不存在** |
+| `/opt/hermes/ui-tui/node_modules` | **不存在** |
+| `/opt/hermes/scripts/whatsapp-bridge/node_modules` | **不存在**（我們不用 WhatsApp） |
+| `/opt/hermes/plugins/platforms/photon/sidecar/node_modules` | 存在，71 entries（`npm ci --no-audit` 烤進 image；兩版一致，我們不啟用 photon） |
+
+→ **runtime 暴露面維持 0，且比 v0.23.0 更乾淨**（v0.23.0 那些帶漏洞的 web / ui-tui 依賴已不在 image 內）。
+
+### 6.8 `GET /v1/skills` **仍回 HTTP 500** — 上游既有缺陷，v0.23.0 與 v0.23.1 相同
+
+> 容器內 agent 的自我報告稱「`/v1/skills` 今日沒有再出現」。**此判斷為誤判** —— 實測（帶正確 `Authorization: Bearer $API_SERVER_KEY` 查 `127.0.0.1:8642/v1/skills`）**仍是 500**：
+
+```
+HTTP 500
+{"error": {"message": "Failed to enumerate skills", "type": "server_error", ...}}
+```
+
+traceback（`/opt/data/logs/errors.log`）：
+
+```
+ERROR gateway.platforms.api_server: GET /v1/skills failed
+  File "/opt/hermes/gateway/platforms/api_server.py", line 2387, in _handle_skills
+    find_all_skills(
+TypeError: find_all_skills() got an unexpected keyword argument 'include_editorial'
+```
+
+**根因**：呼叫端 `gateway/platforms/api_server.py:2387-2389` 傳 `find_all_skills(skip_disabled=False, include_editorial=True)`，但定義端 `tools/skills_tool.py:277` 是 `find_all_skills(*, skip_disabled: bool = False)` —— **沒有** `include_editorial`。
+
+**判定**：v0.23.0 與 v0.23.1 的呼叫端**逐位元組相同**；`origin/main` 仍未修 → **上游既有缺陷，維持不修**（與 v0.23.0 升級日誌 §6 一致）。
+
+**上游 CI 為何沒抓到**：`tests/gateway/test_api_server.py:987` 用 `patch("tools.skills_tool.find_all_skills", return_value=list(fake_skills))` —— mock 接受任意 kwargs，真實簽章不符被完全遮蔽。
+
+**對我們的影響：無。** 該 endpoint 只被外部 API client 消費；repo 內無 `.ts` / `.tsx` / `.mjs` 呼叫者，我們不使用 Desktop app / Webapp。日常入口 Telegram 的 `/skills list` slash command 走**另一條**程式路徑（直接呼叫 `tools/skills_tool`），不受影響。
 
 ---
 
@@ -283,11 +372,13 @@ gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
 
 | # | 項目 | 狀態 |
 |---|---|---|
-| D10 | **使用者實測 Telegram 往返**（發一則訊息並確認回覆） | ⏳ 待使用者 |
+| D10 | **使用者實測 Telegram 往返** | ✅ **通過**（2026-11-10 10:48 CST）。實際由 Telegram 下達「升級後檢查」，agent 回覆完整報告：sessions 134、integrity ok、config v53、API 44 項全通、Skills Hub 22 skills、Tools 30 active、磁碟 1.8T/35%、記憶體 30Gi/14Gi available。`messages` 18,067 → 18,073（+18 = 本次往返本身產生） |
 | D12 | 24h 觀察：RESTARTS / 記憶體 / ERROR 數（on-demand 手動檢查） | ⏳ 2026-11-11 複查。基線：`RESTARTS=0`、MEM `329Mi`、開機後 ERROR `0` |
 | D9 | `faster-whisper` / `av` 實測（首次語音輸入觸發 lazy-install 後驗 `metadata_errors`） | ⏳ 待觸發語音功能 |
-| E1 | 刪除 `~/backups/hermes-20261106/`（保留 `hermes-20261110`） | ⏳ 待 D 全綠 + 使用者授權 |
+| E1 | 刪除 `~/backups/hermes-20261106/`（保留 `hermes-20261110`） | ⏳ 待 D12 完成 + 使用者授權 |
 | E4 | （視需要）以 `doc-and-wp-publish` 發佈至 wp.3pm.lol | ⏳ 選用 |
+
+> 註：容器內 agent 的自我檢查報告有**兩處判斷需修正** —— (1) 「`/v1/skills` 今日沒有再出現」為**誤判**，實測仍回 500（§6.8）；(2) 「Dockerfile 需要加 pnpm」的建議**不採用**，上游明載 pnpm 不進 runtime image（§6.6）。報告的其餘數據均已獨立複驗。
 
 ---
 
