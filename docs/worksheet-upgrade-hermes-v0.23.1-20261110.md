@@ -244,16 +244,21 @@
 
 ### Phase E — 收尾
 
-- [ ] E1 刪除 `hermes-20261106` 備份（D 全綠後），保留 `hermes-20261110`
-  - ⏳ 待 D10 / D12 全綠 + **使用者明授權**（v0.23.0 先例亦為取得明授權後才刪）
+- [x] E1 刪除 `hermes-20261106` 備份（D 全綠後），保留 `hermes-20261110`
+  - ✅ **2026-11-10 使用者授權刪除**（「刪除前次備份。只留一次備份。」）
+  - 刪除前複驗保留備份通過：`integrity_check = ok`、`messages = 18,067`、`sessions = 134`、`schema_version = 32`（升級前狀態，正確的回退基準）
+  - 回收 176 MB；`~/backups/` 現存 `hermes-20261110`（185 MB，Hermes）與 `immich-20261016`（123 MB，**另一個專案**，不屬本次處置範圍）
 - [x] E2 撰寫 `UPGRADE_LOG_v0.23.0_to_v0.23.1.md`
   - ✅ 檔名：`/Users/mlee/hermes/UPGRADE_LOG_v0.23.0_to_v0.23.1.md`
   - ℹ️ **位置修正**：工作表原寫 `docs/UPGRADE_LOG_*.md`，但既有 6 份 `UPGRADE_LOG_*.md`（v0.22.1 → v0.23.0）**全部在 repo 根目錄** → 依既有慣例放根目錄
   - 內容涵蓋：官方 notes 稽核、schema/config 遷移實測、自訂層移植、線上全檢查、**pnpm 上游缺陷根因**、備份與回滾、image stamp 差異、尚待完成
 - [ ] E3 關閉本工作表所有 checkbox，記錄 image stamp 與分支 HEAD 差異
-  - ✅ **image stamp 差異已記錄**：build stamp `9527d9b9b9`（run `42741971255` 的 `headSha` = `hermes --version` 的 `upstream 9527d9b9`）；分支 HEAD `a4adce1b1b`；`git diff --name-only 9527d9b9b9..a4adce1b1b` → **只有本工作表檔** → runtime 程式碼零差異
-  - ⏳ 待 D10 / D12 完成後關閉剩餘 checkbox
-- [ ] E4 （視需要）以 `doc-and-wp-publish` 發佈至 wp.3pm.lol
+  - ✅ **image stamp 差異已記錄**：build stamp `9527d9b9b9`（run `42741971255` 的 `headSha` = `hermes --version` 的 `upstream 9527d9b9`）；分支 HEAD 僅 docs 差異 → runtime 程式碼零差異
+  - ⏳ 待 D12（24h 觀察）完成後關閉最後一個 checkbox
+- [x] E4 （視需要）以 `doc-and-wp-publish` 發佈至 wp.3pm.lol
+  - ✅ 收工文章：`~/kubernetes/docs/hermes-v0-23-1-upgrade-postmortem-20261110.md`（kubernetes repo commit `7f2cf74`）
+  - ✅ 已發佈：**https://wp.3pm.lol/hermes-v0-23-1-upgrade-postmortem-20261110/**
+  - n8n webhook 會自動同步至 Dify 知識庫
 
 ### 回退計畫
 

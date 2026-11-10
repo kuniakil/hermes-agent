@@ -326,8 +326,9 @@ ERROR gateway.run: Fatal telegram adapter error (telegram_network_error): ...
 | 升級前備份 | `~/backups/hermes-20261110/`（185 MB）— `state.db` 184,508,416 B / `state.db-wal` 0 B / `state.db-shm` 32,768 B / `config.yaml` 13,234 B / `.env` 997 B / `.hermes/config.yaml` 6,598 B / `.hermes/skills` 11 MB |
 | 備份方法 | Pod 內 `PRAGMA wal_checkpoint(TRUNCATE)` → `(0,0,0)`，再 **tar streaming** 傳回（`kubectl cp` 在 ~176 MB 的 `state.db` 上會 `websocket: close 1006` 中途斷流） |
 | 備份驗證 | `PRAGMA integrity_check = ok`、`messages = 18,067`、`sessions = 134`、`schema_version = 32`、`_config_version = 52` — **與線上基線完全一致** |
-| 舊備份 | `~/backups/hermes-20261106/`（v0.23.0 快照，176 MB）**待 D 全綠 + 使用者授權後刪除**（v0.23.0 先例亦為取得明授權後才刪） |
+| 舊備份 | `~/backups/hermes-20261106/`（v0.23.0 快照，176 MB）→ ✅ **2026-11-10 經使用者授權後刪除**，回收 176 MB。刪除前已複驗保留備份通過。**只留一次 Hermes 備份** |
 | 說明 | **hermes namespace 無 PVC**，資料走 hostPath `/data/services/hermes/data`；`~/kubernetes/hermes/backups/` 為**空目錄**，從未使用過 |
+| 其他 | `~/backups/immich-20261016/` 屬**另一個專案**，不在本次處置範圍，保留 |
 
 ---
 
@@ -373,10 +374,10 @@ gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent \
 | # | 項目 | 狀態 |
 |---|---|---|
 | D10 | **使用者實測 Telegram 往返** | ✅ **通過**（2026-11-10 10:48 CST）。實際由 Telegram 下達「升級後檢查」，agent 回覆完整報告：sessions 134、integrity ok、config v53、API 44 項全通、Skills Hub 22 skills、Tools 30 active、磁碟 1.8T/35%、記憶體 30Gi/14Gi available。`messages` 18,067 → 18,073（+18 = 本次往返本身產生） |
-| D12 | 24h 觀察：RESTARTS / 記憶體 / ERROR 數（on-demand 手動檢查） | ⏳ 2026-11-11 複查。基線：`RESTARTS=0`、MEM `329Mi`、開機後 ERROR `0` |
+| D12 | 24h 觀察：RESTARTS / 記憶體 / ERROR 數（on-demand 手動檢查） | ⏳ 2026-11-11 複查。基線：`RESTARTS=0`、MEM `329Mi`（開機 13 分）→ `447Mi`（27 分）、開機後 ERROR `0`（唯一 1 筆為我們自己的 `/v1/skills` 探測） |
 | D9 | `faster-whisper` / `av` 實測（首次語音輸入觸發 lazy-install 後驗 `metadata_errors`） | ⏳ 待觸發語音功能 |
-| E1 | 刪除 `~/backups/hermes-20261106/`（保留 `hermes-20261110`） | ⏳ 待 D12 完成 + 使用者授權 |
-| E4 | （視需要）以 `doc-and-wp-publish` 發佈至 wp.3pm.lol | ⏳ 選用 |
+| E1 | 刪除 `~/backups/hermes-20261106/`（保留 `hermes-20261110`） | ✅ **已完成**（2026-11-10 使用者授權；刪除前複驗保留備份 integrity ok / messages 18,067 / sessions 134 / schema 32）。回收 176 MB，**只留一次備份** |
+| E4 | 收工文章發佈至 wp.3pm.lol | ✅ **已發佈**：https://wp.3pm.lol/hermes-v0-23-1-upgrade-postmortem-20261110/（源檔 `~/kubernetes/docs/hermes-v0-23-1-upgrade-postmortem-20261110.md`，kubernetes repo commit `7f2cf74`） |
 
 > 註：容器內 agent 的自我檢查報告有**兩處判斷需修正** —— (1) 「`/v1/skills` 今日沒有再出現」為**誤判**，實測仍回 500（§6.8）；(2) 「Dockerfile 需要加 pnpm」的建議**不採用**，上游明載 pnpm 不進 runtime image（§6.6）。報告的其餘數據均已獨立複驗。
 
