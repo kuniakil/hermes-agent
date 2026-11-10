@@ -184,15 +184,24 @@
 
 ### Phase D — K3s 部署 + 驗證
 
+> **D4 檢查條件修正（Phase 0 實測後）**：我們的 v32 DB **本來就沒有** `messages_fts_cjk` 索引（`sqlite_master` 查 `%cjk%` → 空，僅存 `messages_fts` + `messages_fts_trigram`）。上游 `drop_retired_cjk_index()` 在索引不存在時回傳 `False` → **log 不會**出現「Removed the retired messages_fts_cjk index」訊息。該訊息缺席是**正確**行為，不是遷移失敗。
+> D4 改為：確認開機 log 中 **無任何 CJK / fts 相關 ERROR**，且 trigram 索引正常。
+> **D7 定位修正**：我們的 CJK 搜尋**當下**就走 trigram 索引 → D7 驗的是「trigram 路徑本來就正常」，不是「遷移後才正常」。
+
 - [ ] D1 更新 `~/kubernetes/hermes/overlays/*` kustomize `newTag: v0.23.1`（含 digest 比對）
+  - ✅ 已改 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.23.0"` → `"v0.23.1"`（**待 build 成功 + digest 比對後才 apply**）
+  - `overlays/mac` 維持 `v2026.8.3` 不動（Mac 本機不跑此容器；v0.23.0 先例亦只改 n100）
 - [ ] D2 `kubectl apply -k` + `rollout status`（交子代理）
 - [ ] D3 Pod Running 1/1、RESTARTS 0、image digest 符合
-- [ ] D4 開機 log：DB migration 32→33 成功、**`Removed the retired messages_fts_cjk index` 訊息出現且無 ERROR**、config 52→53 migrate 訊息
+- [ ] D4 開機 log：DB migration 32→33 成功、**無 CJK/fts ERROR**（CJK 移除訊息**預期缺席**，見上方修正）、config 52→53 遷移結果
+  - 註：`clarify_timeout` 我們是 `600`（非預設 3600）→ 上游 `52->53` 遷移（`old=3600, new=90`）**不會**改寫我們的值
 - [ ] D5 `hermes doctor` 通過；s6 supervision 正常
-- [ ] D6 DB 驗證：`PRAGMA integrity_check`、schema=33、sessions 數量與 Phase 0 一致
-- [ ] D7 **中文 session 搜尋驗證**（CJK 索引已淘汰，確認 trigram 路徑可用）
-- [ ] D8 config 覆核：模型 / provider 為顯式設定（`MiniMax-M3` / `minimax`）未被改動；`clarify_timeout` 狀況
+  - 升前基線（v0.23.0 實測）：`hermes doctor` → 21 項 ✓、7 項 ⚠（a2a / browser-cdp / computer_use / hermes-yuanbao / image_gen 為 system dependency；discord / discord_admin / x_search 為缺 key）、`Found 1 issue(s)`（缺 API keys，屬既有狀態非升級造成）
+- [ ] D6 DB 驗證：`PRAGMA integrity_check`、schema=33、sessions 數量與 Phase 0 一致（基線 sessions=134 / messages=18,067）
+- [ ] D7 **中文 session 搜尋驗證**（trigram 路徑）
+- [ ] D8 config 覆核：模型 / provider 為顯式設定（`MiniMax-M3` / `minimax`）未被改動；`clarify_timeout` 應維持 `600`
 - [ ] D9 自訂層實測：SSH、locale `zh_TW.UTF-8`、`faster-whisper` 轉錄（驗 `av` pin 生效、無 `metadata_errors` TypeError）、`edge-tts`、`ffmpeg`
+  - 升前基線（v0.23.0 實測）：locale `C.utf8` / `en_US.utf8` / `zh_TW.utf8` 全在；`sshd` `/usr/sbin/sshd`、`rsync` `/usr/bin/rsync`、`tini` `/usr/bin/tini`、`tmux` `/usr/bin/tmux`、`ffmpeg` `/usr/local/bin/ffmpeg`、`ffprobe` `/usr/local/bin/ffprobe` 全在
 - [ ] D10 Telegram plugin：gateway 啟動 log 無 ERROR；**使用者實測 Telegram 往返**
 - [ ] D11 `hermes plugins install` 可看到最新 catalog（驗 16 MiB 上限修正）
 - [ ] D12 24h 觀察：RESTARTS、記憶體、ERROR 數（on-demand 手動檢查即可）
