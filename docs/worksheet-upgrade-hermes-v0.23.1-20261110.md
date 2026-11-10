@@ -242,8 +242,14 @@
 ### Phase E — 收尾
 
 - [ ] E1 刪除 `hermes-20261106` 備份（D 全綠後），保留 `hermes-20261110`
-- [ ] E2 撰寫 `docs/UPGRADE_LOG_v0.23.0_to_v0.23.1.md`
+  - ⏳ 待 D10 / D12 全綠 + **使用者明授權**（v0.23.0 先例亦為取得明授權後才刪）
+- [x] E2 撰寫 `UPGRADE_LOG_v0.23.0_to_v0.23.1.md`
+  - ✅ 檔名：`/Users/mlee/hermes/UPGRADE_LOG_v0.23.0_to_v0.23.1.md`
+  - ℹ️ **位置修正**：工作表原寫 `docs/UPGRADE_LOG_*.md`，但既有 6 份 `UPGRADE_LOG_*.md`（v0.22.1 → v0.23.0）**全部在 repo 根目錄** → 依既有慣例放根目錄
+  - 內容涵蓋：官方 notes 稽核、schema/config 遷移實測、自訂層移植、線上全檢查、**pnpm 上游缺陷根因**、備份與回滾、image stamp 差異、尚待完成
 - [ ] E3 關閉本工作表所有 checkbox，記錄 image stamp 與分支 HEAD 差異
+  - ✅ **image stamp 差異已記錄**：build stamp `9527d9b9b9`（run `42741971255` 的 `headSha` = `hermes --version` 的 `upstream 9527d9b9`）；分支 HEAD `a4adce1b1b`；`git diff --name-only 9527d9b9b9..a4adce1b1b` → **只有本工作表檔** → runtime 程式碼零差異
+  - ⏳ 待 D10 / D12 完成後關閉剩餘 checkbox
 - [ ] E4 （視需要）以 `doc-and-wp-publish` 發佈至 wp.3pm.lol
 
 ### 回退計畫
