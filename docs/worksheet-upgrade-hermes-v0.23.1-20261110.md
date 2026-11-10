@@ -179,7 +179,14 @@
 - [x] C2 `grep -A6 workflow_dispatch: .github/workflows/ghcr-publish.yml` 確認 input 為 `tag_name` — ✅ inputs = `tag_name` (default `''`) + `platforms` (choice: all/amd64/arm64, default `all`)；trigger 僅 `workflow_dispatch`（無 push/tags）
 - [x] C3 `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.1 -f tag_name=v0.23.1 -f platforms=all` — ✅ run **42741971255**（2026-11-10T02:19:36Z），無 422
 - [x] C4 驗證 run — ✅ `event=workflow_dispatch`、`headBranch=my-config-v0.23.1`、`headSha=9527d9b9b973220055b1e0b3aab8cfaa997290b6`（**我們的 commit**，非上游 `3b42157858`）；`prepare` job success，`build-and-push (linux/arm64)` + `build-and-push (linux/amd64)` 雙架構並行
-- [ ] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.1`（multi-arch index）— ⏳ build 進行中，背景子代理 watch
+- [x] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.1`（multi-arch index）— ✅
+  - **multi-arch index digest：`sha256:6546fcb872d6f6b75031b0d153e8556a906556b9ed6dc8fe108917ed8e56c055`**（media type `application/vnd.oci.image.index.v1+json`，含 amd64 + arm64 + 2 個 attestation manifest）
+  - amd64 manifest：`sha256:b57aacbdd575c5ef48db363b0d49472505b93abb839f25370e4e72cf493f1cf9`
+  - arm64 manifest：`sha256:c0eb6e361cf415cac16026ea9331367fd92d8673ddb49879a6a5f4999f5d36c5`
+  - Tags：`v0.23.1` ✅ OK、`latest` ✅ OK（同一 index）
+  - Build run 42741971255 **success**，耗時 10m03s（prepare 3s / amd64 7m54s / arm64 9m36s / merge 11s）
+  - 自訂層驗證（image config，非 pull）：amd64 與 arm64 的 Env 皆含 **`HOME=/opt/data`** ✅；`Entrypoint=/opt/hermes/docker/entrypoint-dispatch.sh`、`WorkingDir=/opt/hermes`、`Volumes:{/opt/data:{}}`
+    - 其餘 13 個 marker 屬檔案系統層，registry metadata 看不到；已於 B3 於原始碼確認，實際落地留待 D9 於容器內實測
 - [ ] C6 若 422 → 去 `https://github.com/kuniakil/hermes-agent/actions` 點 re-enable banner — N/A（未遇 422）
 
 ### Phase D — K3s 部署 + 驗證
