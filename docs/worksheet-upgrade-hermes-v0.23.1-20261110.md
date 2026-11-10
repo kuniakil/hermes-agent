@@ -5,7 +5,7 @@
 - **目標**：官方 `v0.23.1`（commit `3b421578588243f920886e6fe79a6faa87ea026e`，2026-11-10 01:42Z 發布，immutable）
 - **基線 ref**：`upstream-v0.23.1`（已 fetch；`upstream-v0.23.0` = `2bd378ed1b8d…`）
 - **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.1`
-- **狀態**：🚧 **Go-Sign 已取得（Q1 接受 / Q2 不等 v0.24.0 / Q3 OK）→ Phase 0–C 已執行，GHCR build 進行中**
+- **狀態**：🚧 **Go-Sign 已取得（Q1 接受 / Q2 不等 v0.24.0 / Q3 OK）→ Phase 0–C 已完成（GHCR run 42741971255 success）；Phase D 已部署 v0.23.1，D3–D9 / D11 已驗證通過，待使用者實測 Telegram 往返（D10）與 24h 觀察（D12）**
 - **日期**：2026-11-10
 
 ---
@@ -195,23 +195,49 @@
 > D4 改為：確認開機 log 中 **無任何 CJK / fts 相關 ERROR**，且 trigram 索引正常。
 > **D7 定位修正**：我們的 CJK 搜尋**當下**就走 trigram 索引 → D7 驗的是「trigram 路徑本來就正常」，不是「遷移後才正常」。
 
-- [ ] D1 更新 `~/kubernetes/hermes/overlays/*` kustomize `newTag: v0.23.1`（含 digest 比對）
-  - ✅ 已改 `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.23.0"` → `"v0.23.1"`（**待 build 成功 + digest 比對後才 apply**）
+- [x] D1 更新 `~/kubernetes/hermes/overlays/*` kustomize `newTag: v0.23.1`（含 digest 比對）
+  - ✅ `~/kubernetes/hermes/overlays/n100/kustomization.yaml`：`newTag: "v0.23.0"` → `"v0.23.1"`（commit `31ede98`，已 push）
+  - ✅ digest 比對：Pod 實際 `imageID` = `ghcr.io/kuniakil/hermes-agent@sha256:6546fcb872d6f6b75031b0d153e8556a906556b9ed6dc8fe108917ed8e56c055` ≡ C5 記錄的 multi-arch index digest ✅
   - `overlays/mac` 維持 `v2026.8.3` 不動（Mac 本機不跑此容器；v0.23.0 先例亦只改 n100）
-- [ ] D2 `kubectl apply -k` + `rollout status`（交子代理）
-- [ ] D3 Pod Running 1/1、RESTARTS 0、image digest 符合
-- [ ] D4 開機 log：DB migration 32→33 成功、**無 CJK/fts ERROR**（CJK 移除訊息**預期缺席**，見上方修正）、config 52→53 遷移結果
-  - 註：`clarify_timeout` 我們是 `600`（非預設 3600）→ 上游 `52->53` 遷移（`old=3600, new=90`）**不會**改寫我們的值
-- [ ] D5 `hermes doctor` 通過；s6 supervision 正常
-  - 升前基線（v0.23.0 實測）：`hermes doctor` → 21 項 ✓、7 項 ⚠（a2a / browser-cdp / computer_use / hermes-yuanbao / image_gen 為 system dependency；discord / discord_admin / x_search 為缺 key）、`Found 1 issue(s)`（缺 API keys，屬既有狀態非升級造成）
-- [ ] D6 DB 驗證：`PRAGMA integrity_check`、schema=33、sessions 數量與 Phase 0 一致（基線 sessions=134 / messages=18,067）
-- [ ] D7 **中文 session 搜尋驗證**（trigram 路徑）
-- [ ] D8 config 覆核：模型 / provider 為顯式設定（`MiniMax-M3` / `minimax`）未被改動；`clarify_timeout` 應維持 `600`
-- [ ] D9 自訂層實測：SSH、locale `zh_TW.UTF-8`、`faster-whisper` 轉錄（驗 `av` pin 生效、無 `metadata_errors` TypeError）、`edge-tts`、`ffmpeg`
-  - 升前基線（v0.23.0 實測）：locale `C.utf8` / `en_US.utf8` / `zh_TW.utf8` 全在；`sshd` `/usr/sbin/sshd`、`rsync` `/usr/bin/rsync`、`tini` `/usr/bin/tini`、`tmux` `/usr/bin/tmux`、`ffmpeg` `/usr/local/bin/ffmpeg`、`ffprobe` `/usr/local/bin/ffprobe` 全在
+- [x] D2 `kubectl apply -k` + `rollout status`（交子代理）
+  - ✅ `kubectl apply -k ~/kubernetes/hermes/overlays/n100` 成功；Deployment `observedGeneration=94`、`updatedReplicas=1 / readyReplicas=1 / availableReplicas=1`
+- [x] D3 Pod Running 1/1、RESTARTS 0、image digest 符合
+  - ✅ Pod `hermes-agent-6587cc854c-464mf`，`1/1 Running`，`RESTARTS=0`，`imageID` 與 C5 index digest 完全一致
+- [x] D4 開機 log：DB migration 32→33 成功、**無 CJK/fts ERROR**（CJK 移除訊息**預期缺席**，見上方修正）、config 52→53 遷移結果
+  - ✅ 開機段（`/opt/data/logs/gateway.log`，10:32:23 起）**無任何 CJK / fts 相關 ERROR**；CJK 移除訊息依上方修正**預期缺席**（索引本來就沒建過）
+  - ✅ config `_config_version` 已由 52 → **53**；`clarify_timeout` 維持 **600**（上游 `52->53` 遷移只改 `old=3600`，我們非預設值故未被改寫）
+- [x] D5 `hermes doctor` 通過；s6 supervision 正常
+  - ✅ `hermes doctor` 輸出與升前基線**完全一致**：21 項 ✓、7 項 ⚠（a2a / browser-cdp / computer_use / hermes-yuanbao / image_gen 為 system dependency；discord / discord_admin / x_search 為缺 key）、`Found 1 issue(s)`（缺 API keys，屬既有狀態非升級造成）
+  - ✅ s6 supervision 樹完整：`s6-svscan → rc.init top → main-wrapper.sh → profile-gateways → s6-svscan /run/hermes-service → gateway-default → gateway python`
+- [x] D6 DB 驗證：`PRAGMA integrity_check`、schema=33、sessions 數量與 Phase 0 一致（基線 sessions=134 / messages=18,067）
+  - ✅ `schema_version = 33`、`PRAGMA integrity_check = ok`
+  - ✅ `sessions = 134`（= 基線）、`messages = 18,067`（= 基線）；`messages_fts = 18,067`、`messages_fts_trigram = 18,067`，`sqlite_master` 查 `%cjk%` → 空（與升前一致）
+- [x] D7 **中文 session 搜尋驗證**（trigram 路徑）
+  - ✅ 原始 trigram `MATCH '繁體中文'` → **21** hits；base `messages_fts` 同詞僅 5 hits → trigram 索引確實生效
+  - ✅ `SessionDB.search_messages('繁體中文')` → 5 rows，高亮標記 `>>>繁體中文<<<` 正確
+  - ✅ `'升級'`、`'記憶'` 各回 5 rows
+- [x] D8 config 覆核：模型 / provider 為顯式設定（`MiniMax-M3` / `minimax`）未被改動；`clarify_timeout` 應維持 `600`
+  - ✅ `agent.model.default = MiniMax-M3`、`agent.provider = minimax` 皆未被改動；`clarify_timeout = 600` 維持
+  - ✅ `hermes --version` → `Hermes Agent vv0.23.1 (2026.9.24) · upstream 9527d9b9`
+- [x] D9 自訂層實測：SSH、locale `zh_TW.UTF-8`、`faster-whisper` 轉錄（驗 `av` pin 生效、無 `metadata_errors` TypeError）、`edge-tts`、`ffmpeg`
+  - ✅ locale `C.utf8` / `en_US.utf8` / `zh_TW.utf8` 全在（升前基線一致）
+  - ✅ `sshd` `/usr/sbin/sshd`、`rsync` `/usr/bin/rsync`、`tini` `/usr/bin/tini`、`tmux` `/usr/bin/tmux`、`ffmpeg` `/usr/local/bin/ffmpeg`、`ffprobe` `/usr/local/bin/ffprobe` 全在
+  - ✅ ssh host keys 已產生、`/opt/hermes/docker/entrypoint-ssh.sh` 存在、`HOME=/opt/data`、`/root/.npm` 屬主 `hermes(10000)`、`/tmp/.npm-cache` 權限 `1777`
+  - ✅ 額外套件：`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream` 皆可 import
+  - ⚠️ **`faster-whisper` / `av` 未在 image 內**：`voice` extra 為**惰性安裝**（lazy-install），與 v0.23.0 相同，非本次升級退化。`av==18.1.0` pin 已在 image 內的 `pyproject.toml` 確認存在（`[voice]` 與 `[stt-whisper]` 兩處皆有），但**只有實際 lazy-install 時才會生效**，因此無法在 baked image 內驗證。轉錄功能需在使用者首次觸發語音輸入後，才會在 `/opt/data/installs/<generation>/` 落地並可驗 `metadata_errors` TypeError 是否消失。**本項標記為「待實測觸發」，非阻擋項。**
 - [ ] D10 Telegram plugin：gateway 啟動 log 無 ERROR；**使用者實測 Telegram 往返**
-- [ ] D11 `hermes plugins install` 可看到最新 catalog（驗 16 MiB 上限修正）
+  - ✅ **log 部分已驗**：開機後 `errors.log` 第 16713 行之後（10:32:23 起）**ERROR / CRITICAL 計數 = 0**
+  - ✅ Telegram adapter 開機後 `10:32:52 Connecting to Telegram (attempt 1/8)` → `10:32:52 Connected to Telegram (polling mode)` ✅
+  - ℹ️ 舊 Pod（v0.23.0）於 `07:11:49` 曾出現 `telegram.error.TimedOut` + `Fatal telegram adapter error (telegram_network_error)`（Telegram 網路中斷後重建 adapter）；`10:32:23` 收到 SIGTERM 前**未再復現** → 屬**升級前**事件，非 v0.23.1 迴歸
+  - ⏳ **待使用者實測**：實際 Telegram 發一則訊息並確認回覆
+- [x] D11 `hermes plugins install` 可看到最新 catalog（驗 16 MiB 上限修正）
+  - ✅ `hermes plugins browse` 正常輸出完整 catalog table（`web-venice` / `webmint` / `wiki-ref` / `yandex` / `you` …）
+  - ✅ 快取 `/opt/data/cache/plugin-catalog.json` = **2,361,352 bytes（2.25 MiB）> 2 MiB 舊上限**，`entries = 1,378`（`generated_at` / `entries` / `removed`）
+  - ✅ 上游修正確實在我們分支：`6cff782b8d fix(plugin-catalog): accept the published catalog past 2 MiB`；client 端上限見 `hermes_cli/plugin_catalog.py:41-42`（「The published doc passed 2 MiB on 2026-11-09 (2,109,306 bytes for 1,268 entries) … 16 MiB leaves …」）
+  - ℹ️ **若未套用此修正**，client 會**靜默拒絕**該 catalog 並改用 in-tree pins（1,268 筆 → 看不到較新的移除項目）
 - [ ] D12 24h 觀察：RESTARTS、記憶體、ERROR 數（on-demand 手動檢查即可）
+  - 當下基線（2026-11-10 10:45 UTC+8 / 開機後約 13 分鐘）：`RESTARTS=0`、`readyReplicas=1`、`observedGeneration=94`、CPU `65m` / MEM `329Mi`、開機後 ERROR 數 `0`
+  - ⏳ 於 2026-11-11 上下午手動複查即可（v0.23.0 先例亦為 on-demand 手動檢查，不設自動監控）
 
 ### Phase E — 收尾
 
@@ -232,3 +258,51 @@
 
 - [x] 使用者確認 Q1–Q3 — ✅ 2026-11-10：**Q1 接受**（DB v33 單向遷移，以備份為回退手段）／**Q2 不等 v0.24.0**／**Q3 OK**（D 階段使用者實測 Telegram 往返）
 - [x] **Go-Sign 日期 / 時間**：2026-11-10 02:0x UTC（+08:00 上午）
+
+---
+
+## 5. 已知上游問題（非本次升級造成，僅記錄）
+
+### 5.1 `pnpm: not installed or outdated` 啟動警告 — **上游 v0.23.1 缺陷**
+
+**症狀**：每次 CLI dispatch 與 gateway 啟動時，stderr / log 出現
+
+```
+⚠ install out of sync (pnpm: not installed or outdated) — this docker-managed install must rebuild the artifact to fix
+```
+
+**根因（實測確認）**：
+
+1. 上游 commit `7062229090 chore(js): switch the workspaces from npm to pnpm` 讓 `pm/lock.json` **新增了 `pnpm` 套件條目**
+   - 實測：`pm/lock.json` 在 v0.23.0 有 `pnpm` **0** 筆；在我們 v0.23.1 分支有 **19** 筆；`json.load(...)["packages"]["pnpm"]` 確實存在（含 `darwin-arm64` 等 artifacts）
+2. `Dockerfile` 的 **runtime_base** stage 的安裝清單在 v0.23.0 與 v0.23.1 **完全相同**，沒有 pnpm：
+   ```dockerfile
+   RUN python3 -c 'from pm import ensure; [ensure(name, explicit=True) for name in ("uv", "chromium", "npm", "ffmpeg", "ripgrep")]'
+   ```
+   `pnpm` 只在 `frontend_build`（Dockerfile:334）與 `webapp_build`（Dockerfile:362）stage 被 `ensure("pnpm")` — 這兩個 stage **不會**進 runtime image
+3. runtime image 內 `/opt/hermes/tools/facts.json` **沒有 pnpm 條目**，`/usr/local/bin/pnpm` 不存在
+4. `pm/install.py: drift()` 會迭代 `lockfile.names()`（= lockfile 全部套件，含 pnpm），對每個非 optional / 非 internal 的套件檢查 `_installed_location(...)`；找不到 → `problems[name] = "not installed or outdated"`
+5. `hermes_cli/venv_sync.py: check_runtime()` → `hermes_cli/main.py` 印到 stderr；`gateway/run.py` 記為 WARNING
+
+**影響**：**純外觀**。一次 CLI dispatch 一行 stderr、gateway 一條 WARNING。gateway 正常運作，tool schema 正常 materialize（`Turn machinery warmed in 2.0s (21 tool schema(s))`）。
+
+**是否我們的自訂層造成**：**否**。我們的 Dockerfile 在 pm 相關區段與 upstream **逐行相同**（已 diff 確認），自訂 hunk 都在 locale / ssh / useradd / extras / npm-cache / `HOME=/opt/data` 區段。
+
+**上游是否已修**：**否**。`origin/main` 目前只比 `upstream-v0.23.1` 多 5 個 commit（`8b50838443`、`331a41a81f`、`8edd3120da`、`b3746e35dd`、`d1aed60ec1`），**沒有任何一個** 動到 `pm/` 或 `hermes_cli/venv_sync.py`。
+
+**暫時處置**：不動。等待上游把 `pnpm` 加進 runtime_base 的 ensure 清單（或把 pnpm 標為 optional / internal）。我們不自行在 Dockerfile 加 `ensure("pnpm")` — 那是**改動我們的 image 偏離 upstream** 的方式，應由上游修；若日後確認要本地 workaround，必須另開一個可追溯的 commit 並記錄於升級日誌。
+
+### 5.2 Telegram adapter 在網路中斷後的重建路徑（觀察，非缺陷）
+
+舊 Pod（v0.23.0）於 `2026-11-10 07:11:49` 出現：
+
+```
+ERROR telegram.updater.stop() did not finish before the network-recovery deadline; rebuilding the adapter instead of reusing an Updater whose lifecycle lock may still be held. (likely CLOSE-WAIT socket)
+ERROR gateway.run: Fatal telegram adapter error (telegram_network_error): ...
+```
+
+這是 Telegram API 連線中斷（`149.154.166.110` ConnectTimeout，連續 8 次重試）後的 **adapter 重建**路徑；隨後 `07:12:20 Connected to Telegram (polling mode)` 恢復正常。v0.23.1 開機後**未再復現**（`10:32:52 Connected to Telegram (polling mode)`，且開機後 ERROR 計數為 0）。屬**升級前**事件，非 v0.23.1 迴歸。
+
+### 5.3 `faster-whisper` / `av` 無法在 baked image 內驗證（非缺陷）
+
+`voice` extra 為**惰性安裝**（lazy-install），`faster-whisper` / `av` 不在 image 內，與 v0.23.0 相同。`av==18.1.0` pin（修 PyAV 19 造成的 `metadata_errors` TypeError，上游 #135245）確實存在於 image 內的 `pyproject.toml`（`[voice]` 與 `[stt-whisper]` 兩處），但**只有在實際 lazy-install 時才會生效**。故「無 `metadata_errors` TypeError」必須在使用者**首次觸發語音輸入**、安裝落地到 `/opt/data/installs/<generation>/` 後才能實測。
