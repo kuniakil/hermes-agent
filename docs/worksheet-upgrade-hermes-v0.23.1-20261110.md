@@ -225,11 +225,14 @@
   - ✅ ssh host keys 已產生、`/opt/hermes/docker/entrypoint-ssh.sh` 存在、`HOME=/opt/data`、`/root/.npm` 屬主 `hermes(10000)`、`/tmp/.npm-cache` 權限 `1777`
   - ✅ 額外套件：`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream` 皆可 import
   - ⚠️ **`faster-whisper` / `av` 未在 image 內**：`voice` extra 為**惰性安裝**（lazy-install），與 v0.23.0 相同，非本次升級退化。`av==18.1.0` pin 已在 image 內的 `pyproject.toml` 確認存在（`[voice]` 與 `[stt-whisper]` 兩處皆有），但**只有實際 lazy-install 時才會生效**，因此無法在 baked image 內驗證。轉錄功能需在使用者首次觸發語音輸入後，才會在 `/opt/data/installs/<generation>/` 落地並可驗 `metadata_errors` TypeError 是否消失。**本項標記為「待實測觸發」，非阻擋項。**
-- [ ] D10 Telegram plugin：gateway 啟動 log 無 ERROR；**使用者實測 Telegram 往返**
+- [x] D10 Telegram plugin：gateway 啟動 log 無 ERROR；**使用者實測 Telegram 往返**
   - ✅ **log 部分已驗**：開機後 `errors.log` 第 16713 行之後（10:32:23 起）**ERROR / CRITICAL 計數 = 0**
   - ✅ Telegram adapter 開機後 `10:32:52 Connecting to Telegram (attempt 1/8)` → `10:32:52 Connected to Telegram (polling mode)` ✅
+  - ✅ **使用者實測通過**（2026-11-10 10:48 CST）：實際由 Telegram 下達「升級後檢查」指令，Hermes agent 回覆完整檢查報告 —— 版本演進 v0.23.0 (`upstream 3d6cda5e`) → v0.23.1 (`upstream 9527d9b9`) ✅、sessions 134、integrity ok、config v53、API 44 項全通、Skills Hub 22 skills、Tools 30 active、磁碟 1.8T/35%、記憶體 30Gi/14Gi available
+    - `messages` 18,067 → **18,073（+18）** = 本次 Telegram 往返本身產生的訊息，非資料異常
+    - `triggers` 14（messages 13 + sessions 1）—— 上游 v33 新增的 FTS trigger，數量正常
   - ℹ️ 舊 Pod（v0.23.0）於 `07:11:49` 曾出現 `telegram.error.TimedOut` + `Fatal telegram adapter error (telegram_network_error)`（Telegram 網路中斷後重建 adapter）；`10:32:23` 收到 SIGTERM 前**未再復現** → 屬**升級前**事件，非 v0.23.1 迴歸
-  - ⏳ **待使用者實測**：實際 Telegram 發一則訊息並確認回覆
+  - ⚠️ **容器自我報告的兩處需修正**（見 §5.4、§5.5）：`/v1/skills` **仍在回 500**（容器報告稱「今日沒有再出現」為誤判）；pnpm 警告的成因已定位為上游缺陷，**不需要**改 Dockerfile
 - [x] D11 `hermes plugins install` 可看到最新 catalog（驗 16 MiB 上限修正）
   - ✅ `hermes plugins browse` 正常輸出完整 catalog table（`web-venice` / `webmint` / `wiki-ref` / `yandex` / `you` …）
   - ✅ 快取 `/opt/data/cache/plugin-catalog.json` = **2,361,352 bytes（2.25 MiB）> 2 MiB 舊上限**，`entries = 1,378`（`generated_at` / `entries` / `removed`）
@@ -312,3 +315,79 @@ ERROR gateway.run: Fatal telegram adapter error (telegram_network_error): ...
 ### 5.3 `faster-whisper` / `av` 無法在 baked image 內驗證（非缺陷）
 
 `voice` extra 為**惰性安裝**（lazy-install），`faster-whisper` / `av` 不在 image 內，與 v0.23.0 相同。`av==18.1.0` pin（修 PyAV 19 造成的 `metadata_errors` TypeError，上游 #135245）確實存在於 image 內的 `pyproject.toml`（`[voice]` 與 `[stt-whisper]` 兩處），但**只有在實際 lazy-install 時才會生效**。故「無 `metadata_errors` TypeError」必須在使用者**首次觸發語音輸入**、安裝落地到 `/opt/data/installs/<generation>/` 後才能實測。
+
+### 5.4 容器自我報告的修正：`/v1/skills` **仍在回 HTTP 500**
+
+容器內 agent 的自我報告稱「`/v1/skills` 今日沒有再出現」。**此判斷為誤判** —— 實測（帶正確 `Authorization: Bearer $API_SERVER_KEY` 查 `127.0.0.1:8642/v1/skills`）：
+
+```
+HTTP 500
+{"error": {"message": "Failed to enumerate skills", "type": "server_error", ...}}
+```
+
+`errors.log` 的 traceback：
+
+```
+ERROR gateway.platforms.api_server: GET /v1/skills failed
+  File "/opt/hermes/gateway/platforms/api_server.py", line 2387, in _handle_skills
+    find_all_skills(
+TypeError: find_all_skills() got an unexpected keyword argument 'include_editorial'
+```
+
+**根因**：呼叫端 `gateway/platforms/api_server.py:2387-2389` 傳 `find_all_skills(skip_disabled=False, include_editorial=True)`，但定義端 `tools/skills_tool.py:277` 是 `find_all_skills(*, skip_disabled: bool = False)` —— **沒有** `include_editorial` 參數。
+
+**判定：上游既有缺陷，v0.23.0 與 v0.23.1 完全相同（呼叫端逐位元組相同），`origin/main` 仍未修。** 與 v0.23.0 升級日誌 §6 的結論一致 → **維持不修**。
+
+**為何上游 CI 沒抓到**：`tests/gateway/test_api_server.py:987` 用 `patch("tools.skills_tool.find_all_skills", return_value=list(fake_skills))` —— mock 接受任意 kwargs，因此真實簽章不符不會被測出。
+
+**對我們的影響**：無。我們不使用 Desktop app / Webapp / 任何呼叫 `/v1/skills` 的 client（該 endpoint 只被外部 API client 消費；repo 內無 `.ts`/`.tsx`/`.mjs` 呼叫者）。日常入口是 Telegram，`/skills list` slash command 走的是**另一條**程式路徑（`tools/skills_tool` 直接呼叫），不受影響。
+
+### 5.5 容器自我報告的修正：pnpm 警告**不需要**改 Dockerfile
+
+容器 agent 提出的問題「v0.23.1 是否改用 pnpm？若是我們的 Dockerfile 需要加 pnpm」—— 答案如下。
+
+**Q1：v0.23.1 是否改用 pnpm？→ 是。** 上游 commit `7062229090 chore(js): switch the workspaces from npm to pnpm`；容器內實測 `/opt/hermes/pnpm-lock.yaml`（464,400 B）與 `pnpm-workspace.yaml` 存在，`/opt/hermes/package-lock.json` **已不存在**。
+
+**Q2：我們的 Dockerfile 需要加 pnpm？→ 不需要，且不該加。** 上游 Dockerfile 自己就寫明了（`Dockerfile:330-333`）：
+
+```dockerfile
+# Frontend dependencies never enter the runtime layers.
+FROM runtime_base AS frontend_build
+# pnpm installs the workspaces; nothing in the runtime image runs it, so only
+# the build stages (this one and webapp_build) stage it.
+```
+
+pnpm 只在 `frontend_build`（`Dockerfile:334`）與 `webapp_build`（`Dockerfile:362`）兩個 stage 被 `ensure("pnpm")`；**runtime image 內沒有任何東西會執行它**（容器內實測 `which pnpm` → 不存在，`/usr/local/bin/pnpm` 不存在，`_pm_tool_path("pnpm")` → `None`）。加進 runtime_base 會：(a) 違背上游明載的設計意圖、(b) 讓我們的 image 偏離 upstream、(c) 增加體積、(d) **仍然無法**讓 web/ui-tui 的 audit row 回來（見 §5.6）。
+
+**真正的上游缺陷在 `pm`，不在 Dockerfile**：上游 commit 讓 `pm/lock.json` 把 pnpm 列為一般可安裝套件，但 `pm.drift()`（`pm/install.py:1023`）會拿 lockfile 的**全部**套件名稱去比對 runtime facts，只跳過 `package.optional` 或 `package.internal` 的套件 —— pnpm 兩者皆非 → 每次都報 "not installed or outdated"。上游修法（擇一）：(a) 把 pnpm 加進 runtime_base 的 ensure 清單、(b) 在 lockfile 把 pnpm 標為 build-only / optional、(c) 讓 `drift()` 忽略不在目標 facts 裡的 build-time 套件。
+
+**我們不做本地 workaround**，等上游修（見 §5.1）。
+
+### 5.6 doctor 的 npm/pnpm audit 列消失 — **上游兩個獨立改動疊加**，非 pnpm 缺失的連帶效果
+
+`_check_npm_audit`（`hermes_cli/doctor_tools.py:439`）的 gate 在兩個版本之間**同時**變了兩件事：
+
+| | v0.23.0 | v0.23.1 |
+|---|---|---|
+| 工具 | `npm` | `pnpm`（WhatsApp bridge 仍用 `npm`） |
+| 存在性檢查 | `((PROJECT_ROOT if audit_extra else npm_dir) / "node_modules").exists()` — **只查 root** | `tool and (tree / "node_modules").exists()` — **查該 workspace 自己的** |
+
+v0.23.1 的兩個 pnpm row 各被**兩個獨立條件**擋掉：
+
+1. `pnpm_bin = _pm_tool_path("pnpm")` → `None` → `tool` 為 falsy → 跳過（連 "Root npm package" 也是）
+2. `(PROJECT_ROOT / "web" / "node_modules").exists()` → **False**（容器內實測：`/opt/hermes/web/node_modules` 與 `/opt/hermes/ui-tui/node_modules` **不存在**）→ 即使裝了 pnpm，**web / ui-tui 兩列仍然不會出現**
+
+**淨效果是改善，不是退化。** v0.23.0 升級日誌 §9.4 早就記載：「`web` / `ui-tui` workspace 沒有 node_modules，容器內 `hermes doctor` 報的 npm 數字**不可信**」。v0.23.1 把這些 JS 依賴樹**整個移出 runtime image**（`Dockerfile:330` 註解：「Frontend dependencies never enter the runtime layers」）→ 那批帶漏洞的套件**本來就不在 image 裡了**，audit row 消失是**誠實**的結果。
+
+容器內 JS tree 現況（實測）：
+
+| 路徑 | 狀態 |
+|---|---|
+| `/opt/hermes/node_modules` | 存在，**1 個 entry**（僅 typescript） |
+| `/opt/hermes/web/node_modules` | **不存在** |
+| `/opt/hermes/ui-tui/node_modules` | **不存在** |
+| `/opt/hermes/scripts/whatsapp-bridge/node_modules` | **不存在**（我們不用 WhatsApp） |
+| `/opt/hermes/plugins/platforms/photon/sidecar/node_modules` | 存在，71 entries（`npm ci --no-audit` 烤進 image；兩版一致，我們不啟用 photon） |
+
+→ **我們的 runtime 暴露面維持 0，且比 v0.23.0 更乾淨**（v0.23.0 那些帶漏洞的 web / ui-tui 依賴已不在 image 內）。
+
