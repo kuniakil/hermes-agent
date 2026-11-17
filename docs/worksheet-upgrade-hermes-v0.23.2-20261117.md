@@ -5,7 +5,7 @@
 - **目標**：官方 `v0.23.2`（commit `ae2a81ccc00e9b7c06301523e5bb09608397149c`，2026-11-16 發布）
 - **基線 ref**：`upstream-v0.23.2`（已 fetch；`upstream-v0.23.1` = `3b42157858`）
 - **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.2`
-- **狀態**：🚧 **Phase D 部署與自動化驗證完成（D1–D7, D9 皆綠），待使用者實測 Telegram 往返（D8）後進入 Phase E 收尾**
+- **狀態**：✅ **Phase D 全數完成（含 D8 Telegram 往返與 `--extra stt-whisper` 重建上線），待使用者確認後執行 Phase E 收尾**
 - **日期**：2026-11-17
 
 ---
@@ -141,8 +141,8 @@
 - [x] D5 `hermes doctor` 與 s6 supervision 樹檢查 — ✅ `main-hermes: up`、`Host gateway (PID 207)`、`Config version up to date (v53)`、`22 hub-installed skill(s)`（`Found 1 issue(s)` 為既有缺選用 API keys，與 v0.23.1 基線一致）
 - [x] D6 DB 驗證：✅ `PRAGMA integrity_check = ok`、`schema_version = 33`、`sessions = 134`、`messages = 18,239`（與 Phase 0 完全一致）
 - [x] D7 自訂層實測：✅ `HOME=/opt/data`、`sshd` / `rsync` / `tini` / `tmux` / `ffmpeg`、`en_US.utf8` / `zh_TW.utf8`、`entrypoint-ssh.sh`、`/tmp/.npm-cache`、`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream` 全數正常
-- [ ] D8 **Telegram 往返實測**：gateway 已連線，待使用者發送訊息實測回覆正常
-- [x] D9 `hermes --version` — ✅ `Hermes Agent vv0.23.2 (2026.9.24) · upstream a18bf6b5`（Python 3.14.9 / OpenAI SDK 2.54.0）
+- [x] D8 **Telegram 往返實測**：✅ 使用者於 Telegram 下達升級後檢查指令並收到完整回覆；另發現上游 `v0.23.2`（`398867326d`）導致 `stt-whisper` lazy-install 死鎖，已於 `Dockerfile` 補入 `--extra stt-whisper`（`df6988b743`）並重建 `v0.23.2`（Run `44042061302`，Index Digest `sha256:f343ea218b8ea3515f70cd37df4773c5f0bc310f53f5c66e4bb17f103ca782e8`）重新部署至 Pod `hermes-agent-c6b4487bf-7mvg4`，實測 `faster_whisper: 1.2.1 / av: 18.1.0 / backend: local` 正常
+- [x] D9 `hermes --version` — ✅ `Hermes Agent vv0.23.2 (2026.9.24) · upstream df6988b7`（Python 3.14.9 / OpenAI SDK 2.54.0）
 
 ### Phase E — 收尾
 
