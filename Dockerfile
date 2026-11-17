@@ -317,7 +317,7 @@ RUN python3 -m pm.build_env --source /opt/hermes --python /usr/local/bin/python3
     --out /opt/hermes/.venv --no-install-project --sealed --record-selection \
     --extra all --extra messaging --extra otlp --extra anthropic --extra bedrock \
     --extra azure-identity --extra matrix --extra google-chat --extra fal --extra documents \
-    --extra edge-tts --extra firecrawl --extra dingtalk --extra feishu --extra exa
+    --extra edge-tts --extra firecrawl --extra dingtalk --extra feishu --extra exa --extra stt-whisper
 
 # Icons render on the runtime environment: Pillow and resvg-py are core
 # dependencies. A stage of its own so the frontend stage keeps building its
