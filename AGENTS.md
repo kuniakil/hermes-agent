@@ -170,3 +170,9 @@ per variant and a name → variant table (`tools/environments/`, its table still
 | `providers/` | `providers/README.md` | `ProviderProfile` registry and ABC |
 
 PR workflow: `CONTRIBUTING.md` (maintainers: the `hermes-agent-dev` skill, not shipped here).
+
+## Local Resource Constraint (Mac Host Protection)
+
+- **Strict Resource Rule**: DO NOT run heavy test suites (`pytest`, full test matrix, `uv run pytest`), heavy typechecks, or local `docker build` directly on the local machine.
+- Local verification MUST only check git status, file diffs, and lightweight syntax.
+- All compilation, container packaging, and full test runs MUST be offloaded to GitHub Actions CI (`docker-release.yml` / `ghcr-publish.yml`).
