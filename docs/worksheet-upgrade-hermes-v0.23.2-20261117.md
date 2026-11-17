@@ -5,7 +5,7 @@
 - **目標**：官方 `v0.23.2`（commit `ae2a81ccc00e9b7c06301523e5bb09608397149c`，2026-11-16 發布）
 - **基線 ref**：`upstream-v0.23.2`（已 fetch；`upstream-v0.23.1` = `3b42157858`）
 - **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.2`
-- **狀態**：🚧 **Go-Sign 已取得 → Phase 0–B 已完成（備份驗證 ok、56 linear commits、14/14 Dockerfile markers），準備推送並觸發 GHCR Build**
+- **狀態**：🚧 **Phase D 部署與自動化驗證完成（D1–D7, D9 皆綠），待使用者實測 Telegram 往返（D8）後進入 Phase E 收尾**
 - **日期**：2026-11-17
 
 ---
@@ -120,24 +120,29 @@
 
 ### Phase C — 推送 Fork + 觸發 GHCR Build
 
-- [ ] C1 `git push -u kuniakil my-config-v0.23.2`
-- [ ] C2 `grep -A6 workflow_dispatch: .github/workflows/ghcr-publish.yml` 確認 input 為 `tag_name`
-- [ ] C3 `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.2 -f tag_name=v0.23.2 -f platforms=all`
-- [ ] C4 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.23.2`、`headSha` 為我方最新 commit；派背景子代理 `gh run watch`
-- [ ] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.2` 確認 multi-arch index（`amd64` + `arm64`）與 `HOME=/opt/data` env
-- [ ] C6 若遇 `HTTP 422`，依 Hard Rule 8 至 `/actions` 點擊 re-enable banner（N/A 若順利觸發）
+- [x] C1 `git push -u kuniakil my-config-v0.23.2` — ✅ 已推送（tracking `kuniakil/my-config-v0.23.2`）
+- [x] C2 `grep -A6 workflow_dispatch: .github/workflows/ghcr-publish.yml` 確認 input 為 `tag_name` — ✅
+- [x] C3 `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.2 -f tag_name=v0.23.2 -f platforms=all` — ✅ run **44038651029**（無 422）
+- [x] C4 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.23.2`、`headSha=a18bf6b55b973942f120b2cb77726204fe4009e2`；由背景子代理 `gh run watch` 完成，總耗時 **10m32s**（`prepare` 4s / `amd64` 10m4s / `arm64` 8m3s / `merge` 20s），結論 **success**
+- [x] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.2` — ✅
+  - **Multi-arch Index Digest**：`sha256:6e6450aafdf29b110d5f23d2411a59a406bc0a93281127021d49eda5be4ffd0c`
+  - `linux/amd64`：`sha256:4fb3b4b4e7499cadeccb8830ffcaa71b405cc408c3d5c913026f41052cf52ea3`
+  - `linux/arm64`：`sha256:d95aa43a2bf9bf4a155750fddc84e80c8af2e924eca4f0d42b10cb3f3a99f15c`
+- [ ] C6 若遇 `HTTP 422`，依 Hard Rule 8 至 `/actions` 點擊 re-enable banner — N/A（未遇 422）
 
 ### Phase D — K3s 部署 + 驗證
 
-- [ ] D1 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.2"`（commit + push）
-- [ ] D2 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status`（長等待交子代理）
-- [ ] D3 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
-- [ ] D4 開機 log 檢查：無 ERROR / CRITICAL、確認 `_heal_reset_rows_carrying_a_delegate_marker`（若有觸發）與 `venv_sync` 狀態
-- [ ] D5 `hermes doctor` 與 s6 supervision 樹檢查
-- [ ] D6 DB 驗證：`PRAGMA integrity_check = ok`、`schema_version = 33`、`sessions` / `messages` 筆數與 Phase 0 一致
-- [ ] D7 自訂層實測：SSH、`zh_TW.UTF-8` locale、`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream`、`HOME=/opt/data`
-- [ ] D8 **Telegram 往返實測**：確認 gateway `Connected to Telegram`，並由使用者發送訊息實測回覆正常
-- [ ] D9 `hermes --version` 確認顯示 `v0.23.2`
+- [x] D1 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.2"`（commit `2c32e6c`，已 push）
+- [x] D2 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status` — ✅ `deployment "hermes-agent" successfully rolled out`
+- [x] D3 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
+  - Pod `hermes-agent-98ff6d674-pwgwq`，`1/1 Running`，`RESTARTS 0`，`IP 10.42.0.195`
+  - `imageID`：`ghcr.io/kuniakil/hermes-agent@sha256:6e6450aafdf29b110d5f23d2411a59a406bc0a93281127021d49eda5be4ffd0c`（與 C5 完全一致）
+- [x] D4 開機 log 檢查：✅ `✓ telegram connected`（polling mode）、`✓ api_server connected`、`set_my_commands OK (60 cmds)`、開機後 `errors.log` 0 ERROR/CRITICAL（僅已知上游 `pnpm` 警告與既有 posture/skill 提示）
+- [x] D5 `hermes doctor` 與 s6 supervision 樹檢查 — ✅ `main-hermes: up`、`Host gateway (PID 207)`、`Config version up to date (v53)`、`22 hub-installed skill(s)`（`Found 1 issue(s)` 為既有缺選用 API keys，與 v0.23.1 基線一致）
+- [x] D6 DB 驗證：✅ `PRAGMA integrity_check = ok`、`schema_version = 33`、`sessions = 134`、`messages = 18,239`（與 Phase 0 完全一致）
+- [x] D7 自訂層實測：✅ `HOME=/opt/data`、`sshd` / `rsync` / `tini` / `tmux` / `ffmpeg`、`en_US.utf8` / `zh_TW.utf8`、`entrypoint-ssh.sh`、`/tmp/.npm-cache`、`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream` 全數正常
+- [ ] D8 **Telegram 往返實測**：gateway 已連線，待使用者發送訊息實測回覆正常
+- [x] D9 `hermes --version` — ✅ `Hermes Agent vv0.23.2 (2026.9.24) · upstream a18bf6b5`（Python 3.14.9 / OpenAI SDK 2.54.0）
 
 ### Phase E — 收尾
 
