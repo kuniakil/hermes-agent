@@ -57,3 +57,11 @@
 - **資料庫**：`PRAGMA integrity_check = ok`、`schema_version = 33`、`sessions = 134`、`messages = 18,265+`、FTS trigram 正常。
 - **內建 STT 實測**：`faster_whisper: 1.2.1`、`av: 18.1.0`、`_detect_local_backend() == 'local'`；Telegram 文字往返與語音轉錄（中文）皆已實測通過。
 - **既有上游噪音（維持不修）**：`pnpm: not installed or outdated` 啟動警告、`/v1/skills` HTTP 500。
+
+---
+
+## 4. 後續補充：MiniMax 模型清單與預設模型更新
+
+- 因 MiniMax 即將下架 M2.7 / M2.5 及以下模型，已更新 `hermes_cli/models_catalog_static.py`（commit `9c710397b7`）將 `_MINIMAX_MODELS`（含 `minimax`、`minimax-oauth`、`minimax-cn`）改為 `["MiniMax-M3.1-Flash", "MiniMax-M3"]`。
+- 重新建置並發布 `v0.23.2`（GHCR Run [`44045641392`](https://github.com/kuniakil/hermes-agent/actions/runs/44045641392)，Index Digest `sha256:08dd8898ecf7207ac008b7ad4fe9d1468bdd2178f090c4bae0b634397f44af85`），並更新 `/opt/data/config.yaml` `model.default: MiniMax-M3.1-Flash`。
+- 線上 Pod `hermes-agent-5f75cdcbf8-zpngh` 驗證通過（`upstream 9c710397`、`faster_whisper 1.2.1`、`av 18.1.0`）。
