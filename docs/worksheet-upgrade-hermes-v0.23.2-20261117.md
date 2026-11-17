@@ -5,7 +5,7 @@
 - **目標**：官方 `v0.23.2`（commit `ae2a81ccc00e9b7c06301523e5bb09608397149c`，2026-11-16 發布）
 - **基線 ref**：`upstream-v0.23.2`（已 fetch；`upstream-v0.23.1` = `3b42157858`）
 - **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.2`
-- **狀態**：✅ **Phase D 全數完成（含 D8 Telegram 往返與 `--extra stt-whisper` 重建上線），待使用者確認後執行 Phase E 收尾**
+- **狀態**：✅ **已完成（v0.23.2 上線、STT 內建修復與中文設定驗證、UPGRADE_LOG 與 wp.3pm.lol 發布、前次備份已清理）**
 - **日期**：2026-11-17
 
 ---
@@ -146,10 +146,10 @@
 
 ### Phase E — 收尾
 
-- [ ] E1 確認保留 `~/backups/hermes-20261117/`，視使用者指示清理前次備份 `~/backups/hermes-20261110/`
-- [ ] E2 撰寫 `UPGRADE_LOG_v0.23.1_to_v0.23.2.md`（放 repo 根目錄，依既有慣例）
-- [ ] E3 更新並關閉本工作表所有 checkbox，記錄 image stamp 與分支 HEAD 差異
-- [ ] E4 視需要以 `doc-and-wp-publish` 發布升級紀錄至 `wp.3pm.lol`
+- [x] E1 確認保留 `~/backups/hermes-20261117/`（`integrity_check = ok`），並已依使用者指示刪除前次備份 `~/backups/hermes-20261110/`
+- [x] E2 撰寫 `UPGRADE_LOG_v0.23.1_to_v0.23.2.md`（repo 根目錄）
+- [x] E3 更新並關閉本工作表所有 checkbox（image stamp `df6988b743`，分支 HEAD 僅新增 docs/upgrade log，runtime 程式碼零差異）
+- [x] E4 以 `doc-and-wp-publish` 發布收工文章 `~/kubernetes/docs/hermes-v0-23-2-upgrade-postmortem-20261117.md` 至 **https://wp.3pm.lol/hermes-v0-23-2-upgrade-postmortem-20261117/**（n8n 自動同步至 Dify）
 
 ### 回退計畫
 
