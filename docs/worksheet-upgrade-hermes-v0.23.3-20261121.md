@@ -1,0 +1,319 @@
+# Hermes 升級工作表：v0.23.2 → v0.23.3
+
+- **Fork remote**：`kuniakil`（`kuniakil/hermes-agent`）；**Upstream remote**：`origin`（`NousResearch/hermes-agent`）
+- **目前上線**：`v0.23.2`（分支 `my-config-v0.23.2`，HEAD `896c7e859c`）
+  - Pod `hermes-agent-5f75cdcbf8-zpngh`｜`1/1 Running`｜`RESTARTS 0`｜IP `10.42.0.209`｜Node `n100`
+  - Image `ghcr.io/kuniakil/hermes-agent:v0.23.2`
+- **目標**：官方 `v0.23.3`（commit `caafe5389ae585ef77387a962aee05b1bcf17029`，2026-11-19 發布）
+- **基線 ref**：`upstream-v0.23.3`（已 fetch，commit `caafe5389`）；`upstream-v0.23.2` = `ae2a81ccc0`
+- **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.3`
+- **狀態**：⏳ **待 Go-Sign**（Phase 0–E 尚未執行）
+- **日期**：2026-11-21
+
+---
+
+## 0. ⚠️ 最高優先結論
+
+### 0.1 一句話結論
+
+**`v0.23.3` 名義上是 patch，實際是 1,657 non-merge commits / 3,948 檔 / 370 PRs 的大視窗（完整 curated notes 官方延至 `v0.24.0`）。好消息：DB `SCHEMA_VERSION`（33）、`FTS_STORAGE_VERSION`（3）與 Docker base image **全部未變**，唯一的 schema 變動是 **config `_config_version` 53 → 54**（且僅影響「模板 seeded 的 `prompt_caching.cache_ttl: 5m`」——我們線上是 bare `5m`，屬使用者 pin，遷移會保留，行為不變）。衝突面實測為 **0 個真衝突**（merge-tree 僅 17 個 `.github/workflows/*` modify/delete，全數由既有 purge 機制吸收）。整體風險為 🟢 低–中，仍走標準流程：先備份 `/opt/data` → 建分支 → 移植自訂層 → GHCR 建置 → 滾動上線 → Telegram 往返實測。**
+
+### 0.2 不可逆性判定
+
+| 面向 | v0.23.2 | v0.23.3 | 判定 |
+|---|---|---|---|
+| DB `SCHEMA_VERSION` | 33 | **33** | ✅ **無不可逆遷移**（定義位置從 `hermes_state_common.py:296` 移到 `persistence/sqlite/_schema_ddl.py:74`） |
+| `FTS_STORAGE_VERSION` | 3 | **3** | ✅ 不變 |
+| config `_config_version` | 53 | **54** | ⚠️ **會變更**（見 0.3，單向 stamp，可逆性 = 降回 v0.23.2 只會顯示「written by a newer Hermes」提示，**非致命**） |
+| base image | `debian:trixie-20261020@sha256:4c25275…` | **同一 digest** | ✅ 不變（上游 `Dockerfile` 在此視窗 **完全未動**） |
+| `Dockerfile` / `docker/` / `docker-compose.yml` / `.env.example` | 自訂層 | **上游零改動** | ✅ 與自訂層**零重疊** |
+| `pyproject.toml` | — | wheel `include` 新增 `persistence` / `session_rules` | ✅ 打包層面，無行為影響 |
+
+> **不可逆的部分**：只有 `/opt/data/config.yaml` 的 `_config_version: 53 → 54` 這個 stamp。降回 v0.23.2 映像時，`check_config_version()` 會回報「config.yaml is at version 54, written by a newer Hermes (this build knows up to 53). No migration runs on it…」——**只是提示，不會改寫設定、也不會阻擋啟動**。因此回退不需要額外備份 `config.yaml` 以外的東西。
+
+### 0.3 官方 Release Notes（v0.23.3）稽核
+
+- **視窗規模**：`v0.23.2...v0.23.3` 共 **1,657 non-merge commits**（含 merge 1,675）、**3,948 檔**（+222,379 / −96,154）、**370 merged PRs**、60 closed issues。
+- **無 Breaking Changes / Deprecations 章節**：官方明言「Full curated release notes for this window ship with v0.24.0」，本視窗功能刻意不展開。→ **風險只能靠 diff 稽核補齊**（見 0.4 與第 2 節）。
+- **官方列出的視窗重點**（Release Notes 節錄）：
+  - Prompt-cache lifecycle controller：長工具執行中預熱、閒置對話在 1h 快取到期前壓縮、Nous Portal 走完整 1h 生命週期、`prompt_caching.cache_ttl` 預設改 `auto`。
+  - 壓縮會封存（archive）它丟棄的 tool results；proactive tool-result prune 預設開啟。
+  - 首次執行 CLI 設定改為單一問答流程，含 free tier。
+  - OpenRouter / Nous Portal 新增 GPT-6.2 Astra、Sol（+ Pro）。
+  - Bot Chat composer 上方新增「Waiting on teammates」狀態條。
+  - Linux AppImage agent payload 改由 per-build 穩定副本執行。
+  - **storage layer 拆成 persistence 介面 + SQLite backend**。
+  - 依賴安全更新（oauthlib、opentelemetry、tornado）。
+  - 新增大量 plugin-catalog 条目。
+
+### 0.4 本地實測稽核（diff 挖掘，補足官方未列出的部分）
+
+#### 0.4.1 config schema 遷移 53 → 54（唯一 schema 變動）
+
+`hermes_cli/config_migrations.py` 新增 `_migrate_to_54`：
+
+- 53 → 54：移除 `prompt_caching.cache_ttl: "5m"`，**但只在該行帶有模板 seeded 的行尾註解**（`# use "1h" for long sessions with pauses between turns`）時才移除；其他 `"5m"` 視為使用者 pin → **保留**並印 ℹ 提示。
+- **我們線上實測**（`cat -A` 逐位元組確認）：
+  ```
+  prompt_caching:$
+    cache_ttl: 5m$
+  ```
+  → **bare `5m`、無註解** → 遷移會 **保留**，prompt-cache TTL 維持 5m，**行為零變化**。
+- 新安裝（無既有 config）的預設值改為 `prompt_caching.cache_ttl: "auto"`（1h for human-paced / 5m for machine-paced）。我們不是新安裝，不受影響。
+- **若想吃到 1h 快取層**：手動刪掉 `/opt/data/config.yaml` 的 `cache_ttl: 5m` 那一行即可（遷移後預設即 `auto`）。→ 見 Q3。
+
+#### 0.4.2 其他 config 預設值變更
+
+| Key | v0.23.2 | v0.23.3 | 對我們的影響 |
+|---|---|---|---|
+| `prompt_caching.cache_ttl` | `"5m"` | `"auto"` | 無（我們 config 明確 pin `5m`） |
+| `codex_request_compression` | — | `True`（新增） | 無（Codex 專用，我們用 MiniMax） |
+| `_config_version` | 53 | 54 | 見 0.4.1 |
+
+> compaction / `proactive_prune_tokens` / `micro_compact` 等區塊在本視窗 **完全未變更**（diff 為空）——Release Notes 所述「proactive tool-result prune 預設開啟」指的是 **既有 `proactive_prune_tokens` 區塊之外**的新機制，非預設值翻轉。
+
+#### 0.4.3 `hermes_state_*.py` → `persistence/` + `session_rules/` 重構
+
+- 上游把 68 個扁平 `hermes_state_*.py` 收斂成 **`persistence/`（169 檔）** + **`session_rules/`（18 檔）** + `persistence_assembly.py`，僅留 `hermes_state.py` / `hermes_state_common.py` / `hermes_state_loop_guard.py` / `hermes_state_registry.py`。
+- `pyproject.toml` wheel `include` 同步新增 `persistence` / `persistence.*` / `session_rules` / `session_rules.*`。
+- **DB 檔案路徑、`SCHEMA_VERSION`(33)、`FTS_STORAGE_VERSION`(3) 皆未變** → 既有 `/opt/data/state.db` 可直接沿用。
+
+#### 0.4.4 依賴與工具鏈
+
+- `pyproject.toml`：`opentelemetry-sdk` / `opentelemetry-exporter-otlp-proto-http` `1.45.1 → 1.45.2`（**僅 `otlp` extra**，我們未啟用）。
+- `pm/lock.json`：`cua-driver` `0.21.0 → 0.52.0`（Cua browser driver，**我們未使用**）。
+- `pnpm-lock.yaml`：16 行變更（上游 lock 更新）。
+- **無 Python 版本 floor 變更**、`Dockerfile` 零改動 → 我們的自訂層無需重新 port。
+
+#### 0.4.5 變更規模分布（依 area）
+
+| Area | 檔數 | 說明 |
+|---|---|---|
+| `tests/` | 2,384 | 測試（不進 image） |
+| `plugin-catalog/` | 307 | 目錄資料 |
+| `gateway/` | 193 | gateway 核心 |
+| `persistence/` | 169 | **新 storage 層** |
+| `agent/` | 132 | agent 核心 |
+| `hermes_cli/` | 115 | CLI / config |
+| `website/` | 96 | 官網（**大量刪除** plugin/skills catalog 頁） |
+| `apps/` | 96 | desktop |
+| `tools/` | 59 | 工具 |
+| `tui_gateway/` | 51 | TUI RPC |
+| `plugins/` | 24 | **Telegram 僅 2 檔**（`adapter.py`、`telegram_dm_topic_send.py`） |
+| `session_rules/` | 18 | **新** |
+
+#### 0.4.6 Telegram 平台插件：實測為「零行為變更」
+
+上游 `plugins/platforms/telegram/` 在本視窗只有 **2 檔、+5 / −5 行**的差異，且 **100% 是 `hermes_state` → `persistence` 重構的機械式改寫**：
+
+```diff
+-        db = getattr(getattr(self, "_session_store", None), "_db", None)
+-        if db is None or not hasattr(db, "delete_telegram_topic_binding"):
++        persistence = getattr(getattr(self, "_session_store", None), "persistence", None)
++        if persistence is None:
+-            removed = db.delete_telegram_topic_binding(chat_id=..., thread_id=..., profile_name=...)
++            removed = persistence.routing.delete_topic_binding(chat_id=..., thread_id=..., profile_name=...)
+```
+
+我們線上用到的 3 個 Telegram config key（`telegram.reactions`、`telegram.allowed_chats`、`telegram.extra.rich_messages`）在 v0.23.3 的 `hermes_cli/config_defaults.py` 中**行號與內容完全相同**（`:1574` / `:1577` / `:1581`），無被移除或改名。
+→ **Telegram 側風險實測為 🟢 極低**（上一輪 v0.23.1→v0.23.2 曾是 46 檔大改，本輪只有 2 檔）。
+
+### 0.6 `persistence/` 重構深度稽核（子代理實測）
+
+- **上游重構主 commit**：`be3d6affc8` *"refactor(state)!: remove the old session store"*（2026-11-05）——68 個 `hermes_state_*.py` → `persistence/`(169) + `session_rules/`(18) + `persistence_assembly.py`。
+- **磁碟格式完全未動**：`SCHEMA_SQL`（336 行）、`FTS_SQL`、`FTS_TRIGRAM_SQL`、`DEFERRED_INDEX_SQL`、27 欄 `messages` INSERT 清單 —— **byte-identical**；`PRAGMA journal_mode=WAL`、`foreign_keys=ON`、`busy_timeout`（讀 5.0s / 寫 1.0s）、`synchronous`、`apply_database_pragmas` 全部一致。**無新 on-disk 產物**（`cache/schema_columns.json` 舊版已有）。
+- **無 schema migration 觸發**：`PRAGMA user_version` 兩版皆未寫；`schema_version` 表 = 33 → `if current_version < SCHEMA_VERSION` 為 false → 不寫 `UPDATE schema_version`；`_reconcile_columns` 只補 `PRAGMA table_info` 缺的欄位（相同 DDL → 無 `ALTER TABLE`）。
+- **`hermes_state` public surface 縮水**：facade 變成 655 行 compat shim，**只承載 32 個名稱**（`__all__` = `hermes_state.py:106`）；`SessionDB` 由 **247 個 public method → 24 個**（`hermes_state.py:196-540`），其餘 223 個走 `__getattr__` 拋 `AttributeError`。被移除者含 `is_malformed_schema_error`、`repair_state_db_schema`、`log_write_lock_holders`、18 個 `Session*Mixin`。
+  - ✅ **對我們無影響**：本 fork 相對 v0.23.2 的 Python 差異只有 `hermes_cli/models_catalog_static.py`，**沒有任何本地程式碼 import `hermes_state`**；上游 v0.23.3 自己也只剩 3 個內部 importer。
+- **鎖定行為保留**：`persistence/sqlite/_state/write.py` 與舊 `hermes_state_write.py` **byte-identical**；`lockguard.py` 差異僅 3 行註解（OFD lock 幾何完全相同：`_PENDING_BYTE=0x40000000`、`_SHARED_SIZE=510`、`_SHM_DMS_BYTE=128`）；lock 檔案集合不變（`.fts_rebuild.lock` / `.quarantine.lock` / `.repair.lock` / `.auto-maintenance.lock`）。
+  - ✅ 「probe first so a clean store takes no write lock on open」語意**兩版一致**。
+  - 🆕 **連線模型改變**：v0.23.3 每 profile 每 process **共用一條 writer 連線**（`persistence_assembly.py:52-56`），取代原本每個 `SessionDB` 一條 → **second-writer 衝突變少**；但 `SessionDB.close()` 從關閉連線變成釋放參考。
+- **備份/還原**：`hermes backup` 底層搬到 `persistence/sqlite/admin/_backup.py`，snapshot 語意不變；🆕 `_wal_copy_until_deadline`（`b6412b81be`）在 WAL 快照遇 `SQLITE_BUSY_RECOVERY` 時會在 10s 期限內重試 → **對「對執行中 pod 做備份」更穩健**。還原路徑（`_restore_epoch_source` + `_restore_db_pages`）語意保留；**我們的 tar-copy 還原不經過 Hermes，不受影響**。
+- 🆕 **寫入交易 pinning**：commit `0316063447` 讓 ranked-FTS 路徑釘住一個讀交易，讓診斷 bm25 probe 看到同代 index → **可能暫時讓 `PRAGMA wal_checkpoint(TRUNCATE)` 回 busy**（已用重試迴圈處理）。
+- **`session_rules/` 是純規則層**：18 檔皆**無 `sqlite3` import、無檔案 I/O**（`media.py` 的 `Path()` 只是字串解析呼叫端給的 `media_root`）→ **無新 on-disk 產物、無 migration**。
+
+### 0.7 ⚠️ 線上 DB 實測：v0.23.3 首次開啟會觸發一次全量 FTS 重建
+
+升級前對線上 `state.db` 做的唯讀盤點：
+
+| 項目 | 值 | 意義 |
+|---|---|---|
+| `schema_version` 表 | **33** | ✅ 不觸發 migration ladder |
+| `PRAGMA integrity_check` | `ok` | ✅ |
+| `journal_mode` | `wal` | ✅ |
+| `sessions` / `messages` | 134 / 18,340 | 基準值 |
+| `messages_fts` / `messages_fts_trigram` | 18,340 / 18,340 | 兩套索引皆完整 |
+| `state_meta.fts_tool_full_content_high_water` | **`'16551'`（存在）** | ⚠️ **v0.23.3 新增的 write-on-open 分支的觸發條件** |
+| `state_meta.fts_storage_version` | **不存在** | 兩版皆為 opt-in 路徑，非 v0.23.3 regression |
+| `state_meta.message_uid_backfill` | `'1'` | ✅ 已完成 |
+| `state_meta.legacy_refusal_repair_done` | 不存在 | 兩版皆會在開啟時執行 repair（逐 chat 取寫鎖） |
+
+v0.23.3 的 `_migrate_misaligned_fts_source`（`persistence/sqlite/_schema.py:406-435`）除了原本的「view stale / source misaligned」判斷，**新增**了：只要 `state_meta` 還留著已退役的 `fts_tool_full_content_high_water` marker，就 **DROP `messages_fts` + `INSERT INTO messages_fts(messages_fts) VALUES('rebuild')` 全量重建**（在 `BEGIN IMMEDIATE` 之下、持寫鎖）。上游量測為 1.35M 列 / 8.9 GB 耗 130s（commit `86ba5a8a52`）；**我們是 18,340 列 / 178 MB，預估秒級**。
+
+→ 這是**一次性**成本（重建後 marker 被清掉），但落在**首次啟動**。詳見 Phase D 的 D3a 處理。
+
+### 0.8 決策點（Go-Sign 時請回覆）
+
+| # | 決策 | 建議 |
+|---|---|---|
+| Q1 | config `_config_version` 53 → 54（唯一 schema 變動），是否仍執行 Phase 0 線上 `/opt/data` 備份？ | ✅ **建議執行**：DB schema 未變但視窗 3,948 檔，留一份升級前快照可確保隨時無痛回退。 |
+| Q2 | `prompt_caching.cache_ttl` 維持我們的 bare `5m`（遷移會保留），或改吃預設 `auto`（1h 層）？ | ✅ **建議維持 `5m`**：本次升級不夾帶行為變更；`auto` 可另案評估。 |
+| Q3 | Telegram plugin 僅 3 檔異動（遠小於 v0.23.1→v0.23.2 的 46 檔），是否仍於 Phase D 實測 Telegram 往返？ | ✅ **必須**：Telegram 為唯一使用平台，且 `gateway/` 193 檔異動。 |
+| Q4 | 是否授權依本工作表建立 `my-config-v0.23.3`、推送並觸發 GHCR Build？ | ⏳ **待確認** |
+
+---
+
+## 1. Diff 與衝突面稽核（`upstream-v0.23.2 → upstream-v0.23.3`）
+
+自訂 commits 共 **63 個**（`upstream-v0.23.2..my-config-v0.23.2`，線性 0 merge）。
+
+### 1.1 衝突面（`comm -12` 實測，19 檔）
+
+| 檔案 | 上游變動 | 衝突風險 / 處置 |
+|---|---|---|
+| `.github/workflows/*`（**17 檔**） | 上游 workflow 異動 | 🟢 **全部 purge**，由 `my-config-v0.23.2` checkout 我們的 `ghcr-publish.yml`（註：`ghcr-publish.yml` **上游根本沒有**——上游用 `docker.yml` 發佈到 Docker Hub `nousresearch/hermes-agent`；我們的 154 行 Matrix 版是純自訂檔，purge 時必須排除它） |
+| `AGENTS.md` | 改 3 行（`persistence/` 取代 `hermes_state.py` 說明、`grep`→`search_files`） | 🟡 **可自動合併**（merge-tree 已驗 `Auto-merging AGENTS.md`），但需確認 Mac 資源限制章節仍完整保留 |
+| `hermes_cli/models_catalog_static.py` | 上游加 GPT-6.2 Astra/Sol（3 個 hunk） | 🟢 **可自動合併**（merge-tree 已驗），且上游**未觸碰任何 MiniMax 行** → 我們的 MiniMax patch 可直接帶過 |
+
+**不在交集（可乾淨 cherry-pick）**：`Dockerfile`、`docker/entrypoint-ssh.sh`、`docker/stage2-hook.sh`、`docker-compose.yml`、`.env.example`、根目錄 `UPGRADE_LOG_*.md`（8 份）、`scripts/*`（4 檔）、`docs/**`。
+
+### 1.2 merge-tree 三方合併實測（決定性證據）
+
+```bash
+git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
+```
+
+結果：**17 個 `CONFLICT (modify/delete)` 全部落在 `.github/workflows/`**，其餘 **0 衝突**（`Auto-merging AGENTS.md`、`Auto-merging hermes_cli/models_catalog_static.py`；`Dockerfile` / `docker/` / `.env.example` / `docker-compose.yml` 靜默合併）。
+→ **真衝突數 = 0**，且既有 purge 機制（`f8a2aeed43`）可完整吸收全部 workflow 衝突。
+
+### 1.3 自訂 commits 移植清單（63 → 9 個功能型 + 54 個 docs 型）
+
+| 類型 | Commit | 檔案 | 處置 |
+|---|---|---|---|
+| 功能 | `9c710397b7` | `hermes_cli/models_catalog_static.py` | ✅ cherry-pick（上游未觸 MiniMax 行） |
+| 功能 | `df6988b743` | `Dockerfile`（`--extra stt-whisper`） | ✅ cherry-pick（上游 Dockerfile 零改動） |
+| 功能 | `1e44e86bfe` | `Dockerfile`（自訂層 re-port） | ✅ cherry-pick |
+| 功能 | `ac02ee39d4` | `docker/stage2-hook.sh` | ✅ cherry-pick |
+| 功能 | `d84038b3b1` | `docker/entrypoint-ssh.sh` | ✅ cherry-pick |
+| 功能 | `1efa309d41` | `docker-compose.yml` | ✅ cherry-pick |
+| 功能 | `b02ef9db7e` | `.env.example`（`HERMES_IMAGE`） | ✅ cherry-pick **+ 將版本字串 `v0.23.2` → `v0.23.3`** |
+| 功能 | `6e4530da25` | `AGENTS.md`（Mac 資源限制章節） | ✅ cherry-pick（可自動合併）／必要時手動補回章節 |
+| CI | `f8a2aeed43` | `.github/workflows/*`（purge） | 🔁 **重做**：上游 v0.23.3 有 **48 個** workflow（v0.23.2 為 47，新增 `canary-e2e.yml`），purge 全部再 checkout 我們的 `ghcr-publish.yml` |
+| docs | 其餘 54 個 | `UPGRADE_LOG_*.md` ×8、`docs/**`、`scripts/**` | ✅ cherry-pick（零衝突） |
+
+### 1.4 npm / lockfile 狀態（無本地分歧，直接繼承上游安全更新）
+
+- 我們的 `pnpm-lock.yaml` 與 `upstream-v0.23.2` **完全相同**（`git diff` 為空）→ **無本地分歧**，切到 v0.23.3 後自動繼承上游的漏洞修補：
+  - `follow-redirects` `1.16.1 → 1.16.2`（安全更新）
+  - `joi` `18.2.9 → 18.3.1`
+- `website/package-lock.json` 上游亦有 9 行更新（官網用 npm，**不進 image**）。
+- Docker 的 Node 依賴安裝走 `scripts/build/node-deps.mjs` + `scripts/build/pnpm-lock.mjs`，兩者在 v0.23.3 **皆存在且 `node-deps.mjs` 零改動** → 建置路徑穩定。
+- 我們自訂的 `scripts/camofox_*.py`、`scripts/smoke-v0.22.5.sh` **不在上游異動清單內** → cherry-pick 零衝突。
+
+### 1.5 Dockerfile 自訂層必須保留（目標 14/14 marker）
+
+`openssh-server`、`rsync`、`ssh-keygen -A`、`zh_TW.UTF-8`、`en_US.UTF-8`、`useradd -u 10000`、`--extra edge-tts`、`--extra firecrawl`、`--extra dingtalk`、`--extra feishu`、`--extra exa`、`--extra stt-whisper`、`/tmp/.npm-cache`、`docker/entrypoint-ssh.sh`、`ENV HOME=/opt/data`（base image `debian:trixie-20261020@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308` 不變）。
+
+---
+
+## 2. 風險重點
+
+| # | 風險 | 嚴重度 | 緩解 / 驗證 |
+|---|---|---|---|
+| R1 | config `_config_version` 53 → 54 單向 stamp | 🟢 低 | 降回 v0.23.2 只會顯示提示、不改寫設定；Phase D 確認 `Config version up to date (v54)` |
+| R2 | `persistence/` + `session_rules/` 大重構（187 新檔） | 🟡 中 | DB schema 33 不變、無 migration；Phase D 驗 `PRAGMA integrity_check`、`schema_version = 33`、FTS trigram 正常 |
+| R3 | 3,948 檔大視窗，上游完整 notes 延至 v0.24.0 | 🟡 中 | Phase 0 備份 + 上線後觀察 `RESTARTS`、記憶體與 `errors.log` |
+| R4 | `gateway/` 193 檔、`agent/` 132 檔異動 | 🟡 中 | Phase D 檢查 gateway 開機 log、`hermes doctor`、Telegram 往返實測 |
+| R5 | `prompt_caching.cache_ttl` 預設改 `auto` | 🟢 低 | 我們 config 為 bare `5m`，遷移保留 → 行為不變；Phase D 比對實際 TTL |
+| R6 | Telegram plugin 重構（**僅 2 檔 / +5 −5 行**，且為 `persistence` 機械改寫） | 🟢 極低 | 實測 diff 與 config key 相容性皆無行為變更；Phase D 仍實測往返確認 |
+| R7 | GitHub Actions `HTTP 422` fork auto-disable（Hard Rule 8） | 🟢 低 | 若遇 422，至 `https://github.com/kuniakil/hermes-agent/actions` 點擊 re-enable banner |
+| R8 | 網站 catalog 頁大量刪除（`website/src/pages/plugins/`、`skills/`） | 🟢 低 | 不影響 runtime image；若日後要自架官網需注意 |
+| **R9** | **v0.23.3 首次開啟觸發全量 `messages_fts` 重建**（我們的 DB 有 `fts_tool_full_content_high_water` marker） | 🟡 中 | 一次性；18,340 列 / 178 MB 預估秒級（上游 1.35M 列 / 8.9 GB 為 130s）。見 0.7 與 Phase D 的 D3a。備份已含重建前狀態，可回退 |
+| **R10** | `hermes_state` public surface 由 247 → 24 個 method | 🟢 低 | 本 fork 無任何本地程式碼 import `hermes_state`（唯一 Python 差異是 `models_catalog_static.py`），無影響 |
+
+### 本次**不需要**做的事
+
+- 不重建 memory/embedding 索引（DB schema、embedding 模型、輸入格式版本皆未變）。
+- 不推 `v0.23.3` git tag、不建「已知良好」快照 tag（分支建置模型）。
+- 不更新 `pm/lock.json` 的 cua-driver（我們未用 Cua）；`opentelemetry` 僅 `otlp` extra 未啟用。
+- 本機不跑 `pytest` / `pnpm` / `docker build`（Mac 資源保護規則 + Hard Rule 7）。
+
+---
+
+## 3. 執行步驟 Checklist（**待 Go-Sign 後才執行**）
+
+### Phase 0 — 停機前盤點 + 備份
+
+- [x] 0.1 `kubectl --context n100-cf -n hermes get pod`，記錄目前 pod / image digest（基線：`v0.23.2`）
+  - Pod `hermes-agent-5f75cdcbf8-zpngh`，`1/1 Running`，`RESTARTS 0`，`IP 10.42.0.209`，Node `n100`，AGE `3d15h`
+  - `imageID`：`ghcr.io/kuniakil/hermes-agent@sha256:08dd8898ecf7207ac008b7ad4fe9d1468bdd2178f090c4bae0b634397f44af85`
+  - `hermes --version`：`Hermes Agent vv0.23.2 (2026.9.24) · upstream 9c710397`
+- [x] 0.2 備份 `/opt/data` 至 `~/backups/hermes-20261121/`
+  - WAL checkpoint **第 1 次即成功** → `(0, 0, 0)`，`state.db-wal` 截為 0 bytes
+  - `tar -czf -` 壓縮串流（state.db + -wal + -shm + config.yaml + .env + .hermes/）→ exit 0，無 stderr
+  - 落地：`state.db` 187,817,984 B、`config.yaml` 13,244 B、`.env` 997 B、`.hermes/` 38 MB
+- [x] 0.3 驗證備份：`integrity_check = ok`、`schema_version = 33`、`sessions = 134`、`messages = 18,340`、`messages_fts = 18,340`、`fts_tool_full_content_high_water = '16551'`（見 0.7）
+
+### Phase A — 建立分支 + Purge + 移植自訂 Commits
+
+- [x] A1 `git checkout -b my-config-v0.23.3 upstream-v0.23.3`（base `caafe5389a`）
+- [x] A2 purge 上游 48 個 workflow（`find .github/workflows -type f ! -name 'ghcr-publish.yml' -delete` → 再由 `my-config-v0.23.2` checkout 我們的 `ghcr-publish.yml`），commit `f28603f62b`
+  - 實刪 **47 檔**（上游 48 − 我們的 `ghcr-publish.yml`），新增 `ghcr-publish.yml`（154 行）
+  - ⚠️ 排除檔名必須是 **`ghcr-publish.yml`**（Hermes 專屬），不是 skill 通用範例裡的 `docker-release.yml`
+  - ⚠️ 上游 v0.23.3 新增 `canary-e2e.yml`（第 48 個 workflow），已一併刪除
+- [x] A3 cherry-pick 功能型 commits（零衝突）：`d84038b3b1`、`1efa309d41`、`ac02ee39d4`、`1e44e86bfe`、`df6988b743`、`9c710397b7`
+- [x] A4 `.env.example` 的 `HERMES_IMAGE` 版本字串 `v0.23.2` → **`v0.23.3`**（已提交）
+- [x] A5 cherry-pick `6e4530da25`（`AGENTS.md`）；確認「Local Resource Constraint (Mac Host Protection)」章節完整 ✅（`git diff upstream-v0.23.3 -- AGENTS.md` 僅 +6 行該章節）
+- [x] A6 cherry-pick 其餘 54 個 docs commits（`UPGRADE_LOG_*.md`、`docs/**`、`scripts/**`）
+  - ✅ **62 個 commits 一次 cherry-pick 完畢，exit 0，零衝突**（舊 purge commit `f8a2aeed43` 排除，改由 A2 重做）
+- [x] A7 加入本工作表
+
+### Phase B — 本地輕量驗證（嚴禁重型測試 / 本機 docker build）
+
+- [x] B1 `git log --oneline upstream-v0.23.3..HEAD` = **63 commits、0 merge commits（線性）**；`git status` 乾淨
+- [x] B2 `ls .github/workflows` 只剩 `ghcr-publish.yml` ✅
+- [x] B3 `Dockerfile` 自訂層 **15/15 marker 全數在位**（`openssh-server` `rsync` `ssh-keygen -A` `zh_TW.UTF-8` `en_US.UTF-8` `useradd -u 10000` `edge-tts` `firecrawl` `dingtalk` `feishu` `exa` `stt-whisper` `npm-cache` `entrypoint-ssh.sh` `HOME=/opt/data`）；base image `debian:trixie-20261020@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308` 不變
+- [x] B4 `git diff upstream-v0.23.3 -- Dockerfile` = +36 行（僅自訂層）；`docker/stage2-hook.sh` +84、`docker/entrypoint-ssh.sh` +13（新增）、`docker-compose.yml` +85、`.env.example` +13
+- [x] B5 `git diff upstream-v0.23.3 -- hermes_cli/models_catalog_static.py` = **僅** 我們的 MiniMax 變更（上游 GPT-6.2 已含在 base）✅
+
+### Phase C — 推送 Fork + 觸發 GHCR Build
+
+- [ ] C1 `git push -u kuniakil my-config-v0.23.3`
+- [ ] C2 `grep -A6 workflow_dispatch: .github/workflows/ghcr-publish.yml` 確認 input 為 `tag_name`（非 `tag`）
+- [ ] C3 `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.3 -f tag_name=v0.23.3 -f platforms=all`
+- [ ] C4 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.23.3`、`headSha` = **我們的 commit**；⏳ `gh run watch` **派給背景子代理**（Hard Rule 9），預估 10–12 分鐘
+- [ ] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.3` 確認 multi-arch index digest 存在
+- [ ] C6 若遇 `HTTP 422`，依 Hard Rule 8 至 `/actions` 點擊 re-enable banner（**不要**清 cache、**不要**改 repo settings）
+
+### Phase D — K3s 部署 + 驗證
+
+- [ ] D1 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.3"`
+- [ ] D2 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status`
+- [ ] D3 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
+- [ ] D4 開機 log：`✓ telegram connected`、`✓ api_server connected`、`set_my_commands OK`、開機後 `errors.log` 0 ERROR/CRITICAL
+- [ ] D5 `hermes doctor` + s6 supervision 樹；確認 **`Config version up to date (v54)`**（config 遷移 53→54 已套用）
+- [ ] D6 DB 驗證：`PRAGMA integrity_check = ok`、`schema_version = 33`、`fts_storage_version = 3`、`sessions` / `messages` 筆數與 Phase 0 一致
+- [ ] D7 自訂層實測：`HOME=/opt/data`、`sshd` / `rsync` / `tini` / `tmux` / `ffmpeg`、locale、`entrypoint-ssh.sh`、`/tmp/.npm-cache`、`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream`、`faster_whisper` / `av` 全數正常
+- [ ] D8 **Telegram 往返實測**：使用者於 Telegram 下達指令並收到完整回覆（含中文語音轉錄）
+- [ ] D9 `hermes --version` 確認版本字串為 `v0.23.3`
+- [ ] D10 觀察期：24h 內 `RESTARTS 0`、記憶體穩定、`errors.log` 無新增 ERROR
+
+### Phase E — 收尾
+
+- [ ] E1 保留 `~/backups/hermes-20261121/`；依使用者指示刪除前次備份 `~/backups/hermes-20261117/`
+- [ ] E2 撰寫 `UPGRADE_LOG_v0.23.2_to_v0.23.3.md`（repo 根目錄）
+- [ ] E3 關閉本工作表所有 checkbox
+- [ ] E4 以 `doc-and-wp-publish` 發布收工文章至 **https://wp.3pm.lol/**（n8n 自動同步至 Dify）
+
+### 回退計畫
+
+1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag` 改回 `"v0.23.2"`，`kubectl --context n100-cf apply -k`。
+2. 由於 DB schema 同為 v33、config stamp 降級僅顯示提示，**理論上可直接降回**；若需完整回復升級前狀態，先停 Pod 再以 `~/backups/hermes-20261121/` 還原 `/opt/data`。
+3. 驗證 Pod `1/1 Running` 與 Telegram 往返正常。
+
+---
+
+## 4. Go-Sign 確認區
+
+- [ ] 使用者確認 Q1–Q4
+- [ ] **Go-Sign 日期 / 時間**：＿＿＿＿
