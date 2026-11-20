@@ -152,7 +152,57 @@ v0.23.3 的 `_migrate_misaligned_fts_source`（`persistence/sqlite/_schema.py:40
 
 → 這是**一次性**成本（重建後 marker 被清掉），但落在**首次啟動**。詳見 Phase D 的 D3a 處理。
 
-### 0.8 決策點（Go-Sign 時請回覆）
+### 0.8 Breaking-change 深度稽核（子代理實測，diff 佐證）
+
+| # | 面向 | 變更 | 證據 | 對我們的影響 |
+|---|---|---|---|---|
+| B1 | `hermes_state` 公開 API | 1748 → 655 行 compat shim（docstring：*"removed in v0.27.0"*）；`SessionDB` 縮成約 30 個精選 method，其餘 `__getattr__` 拋 `AttributeError`；**`SessionDB(db_path=…)` 現在要求檔名必須是 `state.db`**，否則拋 `ValueError`；首次使用轉發名稱會發 `DeprecationWarning` | `hermes_state.py:1-3, :28, :196, :203-215, :292, :639-645`；commit `3f68c057c5`、`95038c9bcd` | ✅ 無（我們沒跑自訂插件；唯一 Python 差異是 `models_catalog_static.py`） |
+| B2 | Telegram topic bindings | `SessionTelegramTopicsMixin.delete_telegram_topic_binding` 整個消失，改由 `persistence.gateway.routing.RoutingRepository.delete_topic_binding` 接手（1:1 改名，6 個方法全數對應） | `plugins/platforms/telegram/adapter.py:990-998`；`gateway/run_topics.py:64-80`；commit `3f91a4a43b` | ✅ 無（唯一呼叫者就是 Telegram adapter 本身，已同步更新） |
+| B3 | Platform adapter API | `adapter._ensure_session_db()` → `adapter._ensure_store()`；gateway `self._session_db` → `self.persistence` | `gateway/run_notifications.py:1139`；`gateway/platforms/api_server.py:1623,1733` | ✅ 無（stock adapter 已同步；只會打斷自訂插件） |
+| B4 | `state.db` 還原路徑 | 改走 store admin（`open_store_admin(dst).restore_from(src)`），取代原本的 raw page-copy + runtime-epoch staging；`hermes sessions recover` 仍存在（搬到 `persistence/sqlite/admin/_recovery.py:1183`） | `hermes_cli/backup_restore.py:53-56` | ✅ 我們的 **tar-copy 還原不經過 Hermes**，不受影響；⚠️ 回退計畫**不要**依賴 `hermes sessions recover` |
+| B5 | `config_home` 目錄建立 | `make_user_dir(path, parents=True)` → `mkdir_under_hermes_home(path)`：**具名 profile 的 home 永遠不會被建立** | `hermes_cli/config_home.py:40-43`；`hermes_constants.py:476-501` | ✅ 無（我們用 default home） |
+| B6 | Gateway session policy | `_adopt_stored_policy` 現在會**丟棄未知的 stored policy key**（每 process 警告一次），不再拒收 receipt；`LocalSessionPolicy` 欄位集 old↔new **完全相同** | `gateway/session_policy.py:134-170, :87-97` | ✅ 無 |
+| B7 | CLI 指令面 | 逐一 diff `hermes_cli/subcommands/` 所有 `add_parser("…")` 名稱 → **空 diff**；`hermes_cli/subcommands/sessions.py` 零改動；`/handoff` 只是搬到 `CLIHandoffMixin` | `hermes_cli/cli_commands_handoff.py` | ✅ 無 |
+| B8 | `session_retention.py`（新） | 會 unlink `cache/pruned/` 中無人引用的封存，並可能 VACUUM（沿用既有 `min_vacuum_interval_days` / `min_vacuum_freelist_ratio` 閘門） | `session_retention.py:80, 185-218` | 🟢 低（與 0.10 的 cold-prune 封存連動，見 D10） |
+| B9 | `MACHINE_PACED_SOURCES` | 新增 `api_server` / `curator` / `a2a` / `msgraph_webhook` / `gateway_hygiene`（原為 `api`） | `agent/prompt_caching.py:158-160` | ✅ 無（我們顯式 pin `5m`；且 api_server 前後皆解析為 5m） |
+| B10 | `providers` 套件 | Nous Portal `prompt_cache_max_ttl` `5m → 1h` + `prompt_cache_markers_from_catalog=True` | `plugins/model-providers/nous/__init__.py:76-84` | ✅ 無（我們用 MiniMax） |
+| B11 | Python / 依賴 floor | `requires-python = ">=3.11,<3.15"` **不變**；`dependencies` 清單未動；`.python-version` = `3.14` 不變；`opentelemetry` 僅 `otlp` extra | `pyproject.toml:15` | ✅ 無 |
+
+**上游刪除的 38 個 non-test `.py`**：全為 `hermes_state_*.py` mixin 模組（38 支），加上 `agent/context_compressor_retry.py`、`agent/message_content.py`、`gateway/session_admission.py`、`hermes_cli/session_lost_and_found.py`、`hermes_cli/session_schema_history.py`。
+**模組改名表**（26 項，含 `tools/checkpoint_manager.py` → `agent/checkpoints/manager.py`、`hermes_state_keys.py` → `session_keys.py`、`hermes_state_user_copy.py` → `storage_user_copy.py`、`hermes_state_errors.py` → `storage_errors.py`）——**全是內部路徑，非 API**（AGENTS.md 明載「internal paths are not API」）。
+
+### 0.9 🆕 Prompt-cache lifecycle controller（上游新子系統，預設開啟）
+
+上游新增 `agent/prompt_cache_lifecycle/` + `agent/prompt_cache_routes.py`，**四項預設啟用的行為**（與本次 `cache_ttl` 預設改 `auto` 同一個 release）：
+
+| # | 行為 | 細節 | 證據 | 對我們的影響 |
+|---|---|---|---|---|
+| C1 | **Keep-alive 預熱** | 每則使用者訊息 **3 次** idle keep-alive；工具等待期間另有無上限的 warming | `agent/prompt_cache_lifecycle/warmer.py:41`（`WARM_BUDGET = 3`）、`:46, :49` | ⚠️ **額外 API 呼叫與花費**。閒置的 Telegram 對話在 tier 升到 1h 後會持續被預熱 |
+| C2 | **Learned route store** | 路由樣本存在 `<HERMES_HOME>/cache/prompt_cache_routes.json`；**2 個不同 session 各給 2 次一致樣本後**，若該路由從未被讀回 → **停止給它 keep-alive，且停止送 `cache_control` markers**；事實 7 天後過期 | `agent/prompt_cache_routes.py:1-31, :38`（`EXPIRY_SECONDS = 7*24*3600`）、`:40`（`MIN_SAMPLES = 2`）、`:61-66`（`_path()`） | ⚠️ **我們的 MiniMax 路由可能在累積樣本後被靜默地停止送 cache markers**（`agent/agent_runtime_helpers.py:525-527` 新增 `learned_or_catalog_markers` 分支）。需在 Phase D 觀察 |
+| C3 | **Cold prune** | 當 prompt-cache clock 判定快取已消失 → 修剪舊 tool output（需回收 **≥ 16,000 tokens** 才動手），原文寫入 `$HERMES_HOME/cache/pruned/`；**不需要** `proactive_prune_tokens` | `agent/turn_proactive_prune.py`（新）、`website/docs/user-guide/configuration.md`（+"When the cache has already expired (on by default…)"） | 🟢 低（我們 `proactive_prune_tokens` 仍為 `0`，本區塊在視窗內未改） |
+| C4 | `/context` 擴充 | 新增 tier / learning 行 | `website/docs/user-guide/configuration.md` | 🟢 低（觀察用） |
+
+> 我們的 `HERMES_HOME=/opt/data` → 新 store 落在 `/opt/data/cache/prompt_cache_routes.json`，cold-prune 原文落在 `/opt/data/cache/pruned/`。**Phase D 需檢查這兩個路徑。**
+
+### 0.10 ⚠️ 一項已解決的分析歧異（位元組級證據）
+
+子代理假設「我們線上 `config.yaml` 是用舊模板 seeded 的，那一行會帶模板註解 → 遷移會刪掉它 → 掉到 `auto`」。
+**實測反證**（升級前在線上 pod 以 `cat -A` 取位元組）：
+
+```
+prompt_caching:$
+  cache_ttl: 5m$
+```
+
+我們的行是 **bare `5m`、無引號、無行尾註解**。遷移正則
+`_TEMPLATE_CACHE_TTL_LINE = ^[ \t]+cache_ttl:[ \t]*(["']?)5m\1[ \t]*#[ \t]*use "1h" for long sessions with pauses between turns[ \t]*$`
+在 `cache_ttl: 5m` 之後要求 `#`，**不匹配** → `seeded = False` → 遷移走「保留 + 印 ℹ 提示」分支。
+
+另補一點代理未涵蓋的關鍵條件：遷移 54 **只在 `config.yaml` 的 `_config_version` < 54 時才執行**（不在 `LEGACY_KEY_STEPS` / `STAMP_INDEPENDENT_STEPS`）。我們線上是 `_config_version: 53` → **遷移確實會跑**，但結論是**保留**。
+
+→ **最終行為：`prompt_caching.cache_ttl` 維持 `"5m"`，Telegram 快取層不變，僅多一行 ℹ 提示。** 與 Go-Sign 的 Q2 決策一致。
+
+### 0.11 決策點（Go-Sign 時請回覆）
 
 | # | 決策 | 建議 |
 |---|---|---|
@@ -229,7 +279,9 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 | R7 | GitHub Actions `HTTP 422` fork auto-disable（Hard Rule 8） | 🟢 低 | 若遇 422，至 `https://github.com/kuniakil/hermes-agent/actions` 點擊 re-enable banner |
 | R8 | 網站 catalog 頁大量刪除（`website/src/pages/plugins/`、`skills/`） | 🟢 低 | 不影響 runtime image；若日後要自架官網需注意 |
 | **R9** | **v0.23.3 首次開啟觸發全量 `messages_fts` 重建**（我們的 DB 有 `fts_tool_full_content_high_water` marker） | 🟡 中 | 一次性；18,340 列 / 178 MB 預估秒級（上游 1.35M 列 / 8.9 GB 為 130s）。見 0.7 與 Phase D 的 D3a。備份已含重建前狀態，可回退 |
-| **R10** | `hermes_state` public surface 由 247 → 24 個 method | 🟢 低 | 本 fork 無任何本地程式碼 import `hermes_state`（唯一 Python 差異是 `models_catalog_static.py`），無影響 |
+| **R10** | `hermes_state` public surface 由 247 → 24 個 method，且 `SessionDB(db_path=…)` 現在要求檔名必須是 `state.db` | 🟢 低 | 本 fork 無任何本地程式碼 import `hermes_state`（唯一 Python 差異是 `models_catalog_static.py`），無影響。**但**若日後安裝任何 pinned catalog 插件 import `hermes_state`，會在 2027 的 v0.27.0 移除前收到 `DeprecationWarning` |
+| **R11** | 🆕 Prompt-cache lifecycle controller 預設開啟：idle keep-alive 預熱（額外 API 呼叫/花費）+ learned route store 可能在累積樣本後**靜默停止對 MiniMax 路由送 `cache_control` markers** | 🟡 中 | 上游設計如此，非本次引入。Phase D 觀察 `/context` 的 tier/learning 行、`/opt/data/cache/prompt_cache_routes.json` 內容與實際快取命中 |
+| **R12** | `hermes sessions recover` 底層改寫為 `persistence/sqlite/admin/_recovery.py`，輸出未經行為稽核 | 🟢 低 | **回退計畫一律走 tar-copy 還原**（不經 Hermes），不依賴 `hermes sessions recover` |
 
 ### 本次**不需要**做的事
 
@@ -287,16 +339,23 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 
 ### Phase D — K3s 部署 + 驗證
 
-- [ ] D1 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.3"`
-- [ ] D2 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status`
-- [ ] D3 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
+- [ ] D0 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.3"`
+- [ ] D1 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status`
+- [ ] D2 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
+- [ ] **D3a ⚠️ FTS 重建觀察窗**（見 0.7）：首次啟動會持寫鎖重建 `messages_fts`（預估秒級，18,340 列 / 178 MB）
+  - 觀察 `messages_fts` / `messages_fts_trigram` 列數回到 18,340
+  - 確認 `state_meta.fts_tool_full_content_high_water` **已被清掉**（→ 不會每次重啟都重建）
+  - 確認 `PRAGMA integrity_check = ok`、`schema_version = 33`
+  - 若 startup 卡住 > 2 分鐘或 pod CrashLoop → 依回退計畫回退到 v0.23.2
 - [ ] D4 開機 log：`✓ telegram connected`、`✓ api_server connected`、`set_my_commands OK`、開機後 `errors.log` 0 ERROR/CRITICAL
 - [ ] D5 `hermes doctor` + s6 supervision 樹；確認 **`Config version up to date (v54)`**（config 遷移 53→54 已套用）
-- [ ] D6 DB 驗證：`PRAGMA integrity_check = ok`、`schema_version = 33`、`fts_storage_version = 3`、`sessions` / `messages` 筆數與 Phase 0 一致
+- [ ] D6 DB 驗證：`PRAGMA integrity_check = ok`、`schema_version = 33`、`sessions` = 134、`messages` = 18,340、兩套 FTS 索引列數正常
 - [ ] D7 自訂層實測：`HOME=/opt/data`、`sshd` / `rsync` / `tini` / `tmux` / `ffmpeg`、locale、`entrypoint-ssh.sh`、`/tmp/.npm-cache`、`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream`、`faster_whisper` / `av` 全數正常
 - [ ] D8 **Telegram 往返實測**：使用者於 Telegram 下達指令並收到完整回覆（含中文語音轉錄）
 - [ ] D9 `hermes --version` 確認版本字串為 `v0.23.3`
-- [ ] D10 觀察期：24h 內 `RESTARTS 0`、記憶體穩定、`errors.log` 無新增 ERROR
+- [ ] D10 **🆕 prompt-cache lifecycle 觀察**（見 0.9）：`/opt/data/cache/prompt_cache_routes.json` 是否生成、內容為何；`/context` 的 tier / learning 行；確認 idle keep-alive 預熱**未**造成異常花費或無限迴圈
+- [ ] D11 **確認 `prompt_caching.cache_ttl` 仍為 `5m`**（遷移應保留 bare 值，只多一行 ℹ 提示）：`grep -A2 '^prompt_caching:' /opt/data/config.yaml`
+- [ ] D12 觀察期：24h 內 `RESTARTS 0`、記憶體穩定、`errors.log` 無新增 ERROR
 
 ### Phase E — 收尾
 
@@ -315,5 +374,10 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 
 ## 4. Go-Sign 確認區
 
-- [ ] 使用者確認 Q1–Q4
-- [ ] **Go-Sign 日期 / 時間**：＿＿＿＿
+- [x] 使用者確認 Q1–Q4（2026-11-21）
+  - Q1 備份 → ✅ 執行（Phase 0.2 已完成，`~/backups/hermes-20261121/` 已驗證）
+  - Q2 `prompt_caching.cache_ttl` → ✅ **維持 `5m`**（本次升級不夾帶行為變更；0.10 已用位元組級證據確認遷移會保留 bare 值）
+  - Q3 Telegram 往返實測 → ✅ 執行（Phase D8）
+  - Q4 授權建分支 + 推送 + 觸發 GHCR Build → ✅ 執行
+  - 舊備份 `~/backups/hermes-20261117/` → ⏳ **新備份驗證後由使用者再確認**（已驗證通過，暫不刪）
+- [x] **Go-Sign 日期 / 時間**：2026-11-21（Phase 0–C）
