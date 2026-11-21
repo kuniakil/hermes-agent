@@ -7,7 +7,7 @@
 - **目標**：官方 `v0.23.3`（commit `caafe5389ae585ef77387a962aee05b1bcf17029`，2026-11-19 發布）
 - **基線 ref**：`upstream-v0.23.3`（已 fetch，commit `caafe5389`）；`upstream-v0.23.2` = `ae2a81ccc0`
 - **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.3`
-- **狀態**：✅ **已上線並驗證完成**（Phase 0–D 全綠；Telegram 往返實測通過；僅 D12 24h 觀察期與 E4 發布待辦）
+- **狀態**：✅ **全部完成**（Phase 0–E 全綠；Telegram 往返實測通過；收工文章已發布 wp.3pm.lol）
 - **日期**：2026-11-21
 
 ---
@@ -446,14 +446,14 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
   - `/opt/data/cache/pruned` **未生成**（cold prune 需先有 cache 過期 + 回收 ≥16,000 tokens）
   - → **無 keep-alive 預熱、無額外花費、無 learned 抑制**
 - [x] D11 **確認 `prompt_caching.cache_ttl` 仍為 `5m`** — ✅ 遷移後 `config.yaml` 第 102–103 行仍為 `prompt_caching:` / `  cache_ttl: 5m`（bare 值保留）；`_config_version` 已由 53 更新為 **54**
-- [ ] D12 觀察期：24h 內 `RESTARTS 0`、記憶體穩定、`errors.log` 無新增 ERROR（**待 24h 後複查**）
+- [x] D12 觀察期 — ✅ **使用者決定不設專門觀察期**（升級已完成且各項驗證通過）。當下快照：`RESTARTS 0`、RSS 360MB、`errors.log` 0 ERROR/CRITICAL
 
 ### Phase E — 收尾
 
 - [x] E1 保留 `~/backups/hermes-20261121/`（228M，`integrity_check = ok`、`schema_version = 33`、`sessions = 134` / `messages = 18,340`）；✅ **已依使用者指示刪除前次備份 `~/backups/hermes-20261117/`**（202M，刪除時遇到唯讀 skill 檔以 `chmod -R u+w` 後完成）
 - [x] E2 撰寫 `UPGRADE_LOG_v0.23.2_to_v0.23.3.md`（repo 根目錄）— ✅ 含 2.1–2.6 技術調整、3 線上驗證、4 後續補充、5 回退計畫
 - [x] E3 關閉本工作表所有 checkbox（僅 D12 24h 觀察期與 E4 發布待辦）
-- [ ] E4 以 `doc-and-wp-publish` 發布收工文章至 **https://wp.3pm.lol/**（n8n 自動同步至 Dify）— **待使用者確認**
+- [x] E4 以 `doc-and-wp-publish` 發布收工文章 — ✅ **https://wp.3pm.lol/hermes-v0-23-3-upgrade-postmortem-20261121/**（n8n 自動同步至 Dify）；原始檔 `~/kubernetes/docs/hermes-v0-23-3-upgrade-postmortem-20261121.md`
 
 ### Phase F — Telegram 實測回報的兩個後續發現（**不阻擋收尾，另案處理**）
 
