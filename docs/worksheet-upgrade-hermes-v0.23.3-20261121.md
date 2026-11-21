@@ -459,7 +459,31 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 
 | # | 發現 | 實測 | 判定 |
 |---|---|---|---|
-| F1 | 🆕 doctor 新警告：`~/./cache/uv/` **1.7 GB 沒有任何 pruner 管**（只有 `cache/scratch/` 與 `cache/terminal/` 會被回收） | `archive-v0` 1.2G + `simple-v21` 37M + `wheels-v6` 596K | 🟡 **中**：這是 uv 的套件下載快取，**每次 pm 佈建新 venv 都會增長**，屬「沒有上限的增長點」。本次升級的 staged venv 輪替（`4a07758b` → `714f77f4`）是它的來源。**建議**：在 `asr-subtitle-ops` 或 disk 章節加一條「每次升級後檢查 `cache/uv` 與 `installs` 累積」的檢查項 |
+| F1 | 🆕 doctor 新警告：`~/./cache/uv/` **1.9 GB 沒有任何 pruner 管**（只有 `cache/scratch/` 與 `cache/terminal/` 會被回收） | `archive-v0` 1.9G + `sdists-v10` 48M + `wheels-v7` 1.6M + `simple-v27` 1.1M | ✅ **已手動清理**（見下方 F1.1） |
+#### F1.1 `cache/uv` 的真實機制與清理（2026-11-21 已執行）
+
+原本把 `cache/uv` 描述成「uv 的套件下載快取」**不夠精確**。讀 `pm/packages.py:414-475` 後才搞懂：
+
+| 項目 | 事實 |
+|---|---|
+| `/opt/data/cache/uv/`（1.9G） | **machine-scoped 可寫快取**（`uv_cache_dir()`，跨 profile 共用） |
+| `/opt/hermes/uv-cache`（957M） | **映像內唯讀 payload cache**（`store_root().parent / "uv-cache"`） |
+| `.seeded` marker | 內容 = `sha256(uv.lock) + "+payload2"`（本次 `3501084a…+payload2`），記錄「payload 已合併完畢」 |
+| 增長來源 | 升級換 `uv.lock` → digest 不符 → PM **重新 seed，把新 payload 合併進舊的** → **舊 lock 的 wheel 永遠不被淘汰** → 無上限增長 |
+| 誰會觸發 re-seed | 只有 `pm/environment.py:282`（uv sync）與 `pm/runtime_stage.py:30`（runtime stage）。**`hermes doctor` 與 `pm.drift()` 不會** |
+| 為什麼 doctor 說它無 pruner | 它是 pm 的 seed 目標，不是 uv 的可回收快取 —— doctor 的 pruner 只認 `cache/scratch/` 與 `cache/terminal/` |
+
+**清理執行**（⚠️ 必須整個目錄刪，**不能只刪內容**）：
+
+```bash
+kubectl --context n100-cf -n hermes exec deploy/hermes-agent -- rm -rf /opt/data/cache/uv
+```
+
+- 保留 `.seeded` marker 會讓 PM 認為已 seed 完成 → 下次 `uv sync --offline` 缺 entry → **fails closed**（上游註解：*"a partial seed that marked itself done would never be retried, and every later offline sync that needs the missing entries fails closed"*）。刪掉 marker 才能安全重新 seed。
+- 事前確認：**無行程持有 `cache/uv` 內的檔案**（`/proc/*/fd` 掃描）、無 uv/pm 程序在跑、現行 venv 已 materialize 於 `/opt/data/installs/<id>/environments/<hash>/venv`（與 cache 無關）。
+- **結果**：`cache/uv` 已刪除且**未被重新建立**（doctor 跑完後仍不存在，證明 doctor 不會 seed）；`/opt/data/cache` 從 1.9G 降到 **17M**；pod 維持 `1/1 Running`、`RESTARTS 0`；doctor 仍報 `✓ Runtime venv staged`、`✓ Config version up to date (v54)`、`✓ ~/./state.db exists (134 sessions)`。
+- **代價**：下次 venv sync / runtime stage 會重新 seed（複製 ~957 MB payload）。**這不是永久解法 —— 升級後它會長回來**；根治需改上游 pm 的 seed 策略或改用 `uv cache prune`。
+
 | F2 | `/opt/data` 從 3.4G 漲到 5.7G | `.cache/uv` 1.7G（新增）/ `.cache/huggingface` 142M / `.cache/electron` 111M / `.cache/node-gyp` 67M / `installs` 1.3G | 🟢 **低**：Hermes 自身 5.7G 只佔 658G 已用空間的 0.9%；容器外來源（`/data/services/k8s-media`、`/var/lib/containerd`）量不到，**磁碟 21G 增量不歸因給 Hermes**（與既有記憶一致：N100 磁碟暴增來自 Sonarr 拉劇） |
 
 ### 回退計畫
