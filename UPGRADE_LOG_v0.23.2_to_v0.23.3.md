@@ -145,7 +145,7 @@ bare `5m`、無引號、**無行尾註解** → 不匹配遷移正則 → `seede
 
 | # | 發現 | 實測 | 建議 |
 |---|---|---|---|
-| F1 | 🆕 doctor 新警告：`~/./cache/uv/` **1.7 GB 沒有任何 pruner 管**（只有 `cache/scratch/` 與 `cache/terminal/` 會被回收） | `archive-v0` 1.2G + `simple-v21` 37M + `wheels-v6` 596K | 🟡 這是 uv 的套件下載快取，**每次 pm 佈建新 venv 都會增長**，屬沒有上限的增長點。本次 staged venv 輪替就是它的來源。建議在磁碟章節加一條「每次升級後檢查 `cache/uv` 與 `installs` 累積」 |
+| F1 | 🆕 doctor 新警告：`~/./cache/uv/` **1.9 GB 沒有任何 pruner 管**（只有 `cache/scratch/` 與 `cache/terminal/` 會被回收） | `archive-v0` 1.9G + `sdists-v10` 48M + `wheels-v7` 1.6M + `simple-v27` 1.1M | ✅ **已手動清理**（見下方 F1.1） |
 | F2 | `/opt/data` 從 3.4G 漲到 5.7G | `.cache/uv` 1.7G（新增）/ `.cache/huggingface` 142M / `.cache/electron` 111M / `.cache/node-gyp` 67M / `installs` 1.3G | 🟢 Hermes 自身 5.7G 只佔 658G 已用空間的 0.9%；容器外來源（`/data/services/k8s-media`、`/var/lib/containerd`）量不到，**磁碟 21G 增量不歸因給 Hermes** |
 
 ---
