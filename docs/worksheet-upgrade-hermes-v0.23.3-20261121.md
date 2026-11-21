@@ -209,6 +209,21 @@ v0.23.3 的 `_migrate_misaligned_fts_source`（`persistence/sqlite/_schema.py:40
 
 > 我們的 `HERMES_HOME=/opt/data` → 新 store 落在 `/opt/data/cache/prompt_cache_routes.json`，cold-prune 原文落在 `/opt/data/cache/pruned/`。**Phase D 需檢查這兩個路徑。**
 
+#### 0.9.1 我們的 MiniMax 路由實質不受 prompt-cache lifecycle 影響（實測推導）
+
+我們線上 `model.default: MiniMax-M3.1-Flash`、`model.provider: minimax`。逐條對照 v0.23.3 的 markers 決策鏈：
+
+| 步驟 | 程式碼 | 我們的結果 |
+|---|---|---|
+| 1 | `is_anthropic_wire = eff_api_mode == "anthropic_messages"`（`agent/agent_runtime_helpers.py:1359`） | 兩種 api_mode 都要分別驗 |
+| 2 | `is_minimax_route = provider_lower in {"minimax", "minimax-cn"} or base_url_host_matches(..., "api.minimax.io"/"api.minimaxi.com")`（`:1389-1393`） | ✅ **True**（provider = `minimax`） |
+| 3 | anthropic wire 分支：`_model_name_suggests_minimax_m3(eff_model)` → `"minimax-m3" in "minimax-m3.1-flash"` → **True** → `return False, False`（`:1394-1398`） | ✅ **不送 markers**，且此分支在 `learned_or_catalog_markers` **之前**就 return |
+| 4 | chat_completions 分支：`learned_or_catalog_markers(...)` → `marker_preference()`（無樣本 → None）→ `catalog_cache_markers()` → `get_provider_profile("minimax")` → **minimax 不是註冊的 ProviderProfile**（`providers/` 內 0 筆 minimax）→ **None** → 該分支不成立 | ✅ **不送 markers**（落到函式尾端 `return False, False`，`:1435`） |
+| 5 | warmer 的門檻 `has_cache_markers(api_kwargs)`（`agent/prompt_cache_lifecycle/replay.py:14-27`）—— **沒有 markers 就不會 keep-alive 預熱** | ✅ **無額外 API 呼叫、無額外花費** |
+| 6 | learned route 樣本只有「實際送過 markers 且被讀回」才會被記錄 | ✅ 我們從不送 markers → 永遠沒有樣本 → 不會出現「抑制 markers」的狀況 |
+
+→ **結論：R11 對我們的 MiniMax-M3.1-Flash 路由不成立。** 仍列 D10 觀察（確認上游實際行為與推導一致），但不列為阻擋項。
+
 ### 0.10 ⚠️ 一項已解決的分析歧異（位元組級證據）
 
 子代理假設「我們線上 `config.yaml` 是用舊模板 seeded 的，那一行會帶模板註解 → 遷移會刪掉它 → 掉到 `auto`」。
@@ -305,7 +320,7 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 | R8 | 網站 catalog 頁大量刪除（`website/src/pages/plugins/`、`skills/`） | 🟢 低 | 不影響 runtime image；若日後要自架官網需注意 |
 | **R9** | **v0.23.3 首次開啟觸發全量 `messages_fts` 重建**（我們的 DB 有 `fts_tool_full_content_high_water` marker） | 🟡 中 | 一次性；18,340 列 / 178 MB 預估秒級（上游 1.35M 列 / 8.9 GB 為 130s）。見 0.7 與 Phase D 的 D3a。備份已含重建前狀態，可回退 |
 | **R10** | `hermes_state` public surface 由 247 → 24 個 method，且 `SessionDB(db_path=…)` 現在要求檔名必須是 `state.db` | 🟢 低 | 本 fork 無任何本地程式碼 import `hermes_state`（唯一 Python 差異是 `models_catalog_static.py`），無影響。**但**若日後安裝任何 pinned catalog 插件 import `hermes_state`，會在 2027 的 v0.27.0 移除前收到 `DeprecationWarning` |
-| **R11** | 🆕 Prompt-cache lifecycle controller 預設開啟：idle keep-alive 預熱（額外 API 呼叫/花費）+ learned route store 可能在累積樣本後**靜默停止對 MiniMax 路由送 `cache_control` markers** | 🟡 中 | 上游設計如此，非本次引入。Phase D 觀察 `/context` 的 tier/learning 行、`/opt/data/cache/prompt_cache_routes.json` 內容與實際快取命中 |
+| **R11** | 🆕 Prompt-cache lifecycle controller 預設開啟：idle keep-alive 預熱 + learned route store 可能靜默停止送 `cache_control` markers | 🟢 **低（實測後降級）** | ✅ **對我們的 MiniMax 路由實質無影響**（見 0.9.1）：我們的路由**本來就不送 markers**，因此 (a) 不會有 keep-alive 預熱 → 無額外花費；(b) learned route 沒有樣本可學 → 不會抑制 markers。Phase D 仍觀察 `/context` tier/learning 行與 `cache/prompt_cache_routes.json` |
 | **R12** | `hermes sessions recover` 底層改寫為 `persistence/sqlite/admin/_recovery.py`，輸出未經行為稽核 | 🟢 低 | **回退計畫一律走 tar-copy 還原**（不經 Hermes），不依賴 `hermes sessions recover` |
 
 ### 本次**不需要**做的事
