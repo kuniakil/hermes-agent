@@ -7,7 +7,7 @@
 - **目標**：官方 `v0.23.3`（commit `caafe5389ae585ef77387a962aee05b1bcf17029`，2026-11-19 發布）
 - **基線 ref**：`upstream-v0.23.3`（已 fetch，commit `caafe5389`）；`upstream-v0.23.2` = `ae2a81ccc0`
 - **發布模型**：分支建置，不推 tag。`ghcr-publish.yml`（dispatch input **`tag_name`**）→ `ghcr.io/kuniakil/hermes-agent:v0.23.3`
-- **狀態**：⏳ **待 Go-Sign**（Phase 0–E 尚未執行）
+- **狀態**：✅ **已上線並驗證完成**（Phase 0–D 全綠；Telegram 往返實測通過；僅 D12 24h 觀察期與 E4 發布待辦）
 - **日期**：2026-11-21
 
 ---
@@ -451,9 +451,9 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 ### Phase E — 收尾
 
 - [x] E1 保留 `~/backups/hermes-20261121/`（228M，`integrity_check = ok`、`schema_version = 33`、`sessions = 134` / `messages = 18,340`）；✅ **已依使用者指示刪除前次備份 `~/backups/hermes-20261117/`**（202M，刪除時遇到唯讀 skill 檔以 `chmod -R u+w` 後完成）
-- [ ] E2 撰寫 `UPGRADE_LOG_v0.23.2_to_v0.23.3.md`（repo 根目錄）
-- [ ] E3 關閉本工作表所有 checkbox
-- [ ] E4 以 `doc-and-wp-publish` 發布收工文章至 **https://wp.3pm.lol/**（n8n 自動同步至 Dify）
+- [x] E2 撰寫 `UPGRADE_LOG_v0.23.2_to_v0.23.3.md`（repo 根目錄）— ✅ 含 2.1–2.6 技術調整、3 線上驗證、4 後續補充、5 回退計畫
+- [x] E3 關閉本工作表所有 checkbox（僅 D12 24h 觀察期與 E4 發布待辦）
+- [ ] E4 以 `doc-and-wp-publish` 發布收工文章至 **https://wp.3pm.lol/**（n8n 自動同步至 Dify）— **待使用者確認**
 
 ### Phase F — Telegram 實測回報的兩個後續發現（**不阻擋收尾，另案處理**）
 
