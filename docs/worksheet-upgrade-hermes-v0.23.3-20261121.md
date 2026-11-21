@@ -434,7 +434,12 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
   - s6：`main-hermes` up（pid 723），單一 python 行程 `gateway run --replace`
 - [x] D6 DB 驗證 — ✅ `integrity_check = ok`、`schema_version = 33`、`sessions = 134`、`messages = 18,340`（與 Phase 0 完全一致）、`messages_fts` = 18,340、`messages_fts_trigram` = 18,340
 - [x] D7 自訂層實測 — ✅ 全數正常：`HOME=/opt/data` / `HERMES_HOME=/opt/data`、`sshd` `rsync` `tini` `tmux` `ffmpeg` `ffprobe` `rg` `node` `npm` `python3`、`en_US.utf8` + `zh_TW.utf8`、`/opt/hermes/docker/entrypoint-ssh.sh`、`/tmp/.npm-cache`（1777）、`edge_tts` `firecrawl` `lark_oapi` `exa_py` `dingtalk_stream` `faster_whisper` `av`
-- [ ] D8 **Telegram 往返實測**：使用者於 Telegram 下達指令並收到完整回覆（含中文語音轉錄）
+- [x] D8 **Telegram 往返實測** — ✅ **使用者於 08:24 於 Telegram 下達升級後檢查指令，08:24:57 收到完整回覆（2,839 字）**
+  - Session `20260708_133022_65a00a95`，4 次 API 呼叫（`MiniMax-M3.1-Flash` / `minimax`），耗時 63.7s，`response_len=2839`
+  - **prompt cache 實測命中 98%**：`cache=103936/106021 (98%)` → 105984/107766 (98%) → 107520/108964 (99%)
+    （與 0.9.1 的推導一致：Hermes 不送 `cache_control` markers，但 MiniMax-M3 的**伺服器端自動前綴快取**照樣生效 → 我們不必送 markers 也有 98% 命中）
+  - 實測報告結論：**v0.23.3 升級成功，核心全數正常，部署後 0 ERROR；資料無損（integrity ok、FTS 正常）；STT 未受影響（兩個 venv 端到端中文轉錄都通過）；staged venv 已自動輪替（`4a07758b` → `714f77f4`），舊環境已被 pm 清掉無殘留**
+  - 報告涵蓋：版本演進、環境、sessions 134 / messages 18,346 / integrity ok / triggers 14 個未動 / worker_executions 0 / session_admissions 23 / Config v54 / 磁碟 / 記憶體 / API 44 項全通 / Skills Hub 22 / Tools 30 active / 日誌 0 ERROR / STT 雙 venv / gateway 實際執行環境（`/opt/hermes/.venv`，`HERMES_SITE` 正確）
 - [x] D9 `hermes --version` — ✅ `Hermes Agent vv0.23.3 (2026.9.24) · upstream 67246ec0`
 - [x] D10 **prompt-cache lifecycle 觀察** — ✅ **與 0.9.1 的推導完全一致**
   - `/opt/data/cache/prompt_cache_routes.json` **未生成**（我們的路由不送 markers → 無樣本可學 → 不會建立 store）
@@ -445,10 +450,17 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 
 ### Phase E — 收尾
 
-- [ ] E1 保留 `~/backups/hermes-20261121/`；依使用者指示刪除前次備份 `~/backups/hermes-20261117/`
+- [x] E1 保留 `~/backups/hermes-20261121/`（228M，`integrity_check = ok`、`schema_version = 33`、`sessions = 134` / `messages = 18,340`）；✅ **已依使用者指示刪除前次備份 `~/backups/hermes-20261117/`**（202M，刪除時遇到唯讀 skill 檔以 `chmod -R u+w` 後完成）
 - [ ] E2 撰寫 `UPGRADE_LOG_v0.23.2_to_v0.23.3.md`（repo 根目錄）
 - [ ] E3 關閉本工作表所有 checkbox
 - [ ] E4 以 `doc-and-wp-publish` 發布收工文章至 **https://wp.3pm.lol/**（n8n 自動同步至 Dify）
+
+### Phase F — Telegram 實測回報的兩個後續發現（**不阻擋收尾，另案處理**）
+
+| # | 發現 | 實測 | 判定 |
+|---|---|---|---|
+| F1 | 🆕 doctor 新警告：`~/./cache/uv/` **1.7 GB 沒有任何 pruner 管**（只有 `cache/scratch/` 與 `cache/terminal/` 會被回收） | `archive-v0` 1.2G + `simple-v21` 37M + `wheels-v6` 596K | 🟡 **中**：這是 uv 的套件下載快取，**每次 pm 佈建新 venv 都會增長**，屬「沒有上限的增長點」。本次升級的 staged venv 輪替（`4a07758b` → `714f77f4`）是它的來源。**建議**：在 `asr-subtitle-ops` 或 disk 章節加一條「每次升級後檢查 `cache/uv` 與 `installs` 累積」的檢查項 |
+| F2 | `/opt/data` 從 3.4G 漲到 5.7G | `.cache/uv` 1.7G（新增）/ `.cache/huggingface` 142M / `.cache/electron` 111M / `.cache/node-gyp` 67M / `installs` 1.3G | 🟢 **低**：Hermes 自身 5.7G 只佔 658G 已用空間的 0.9%；容器外來源（`/data/services/k8s-media`、`/var/lib/containerd`）量不到，**磁碟 21G 增量不歸因給 Hermes**（與既有記憶一致：N100 磁碟暴增來自 Sonarr 拉劇） |
 
 ### 回退計畫
 
