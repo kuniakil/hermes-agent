@@ -167,6 +167,34 @@ v0.23.3 的 `_migrate_misaligned_fts_source`（`persistence/sqlite/_schema.py:40
 
 > ⚠️ **注意那句 "Downgrading is unsupported"**：v0.23.3 重建後，降回 v0.23.2 會缺少 `messages_fts_src` 投影 view 的相容性。**回退計畫因此必須連 `state.db` 一起還原**（用 `~/backups/hermes-20261121/` 的備份），不能只換 image。
 
+#### 0.7.3 ✅ 上線後實測更正：**我們是 legacy inline FTS 佈局，不會重建**
+
+原本的 R9 預期「v0.23.3 首次開啟會重建 `messages_fts`」。**上線後實測推翻此預期**，並找到了原因。
+
+在 v0.23.3 的 pod 內直接呼叫上游函式判定：
+
+```
+stored vtable: CREATE VIRTUAL TABLE messages_fts USING fts5(content)
+base_index_recognised:      True
+base_index_realigned_on_open: False
+fts_layout_drift:            ['messages_fts', 'messages_fts_trigram']
+fts_layout_current:          False
+```
+
+| 事實 | 意義 |
+|---|---|
+| 儲存的 vtable 是 `fts5(content)` —— **單欄、自帶內容的 inline 佈局** | 我們的 DB **沒有** `messages_fts_src` 投影 view（實測 `sqlite_master` 確認） |
+| `_migrate_misaligned_fts_source` 的開頭 guard 是 `if legacy or not base_index_recognised(cursor): return` | **legacy inline DB 依設計直接跳過整條重建路徑**（docstring 原文：*"Legacy inline DBs skip this entirely (their index is self-contained; they still take the DDL on the optimize-storage path)"*） |
+| `fts_layout_drift` 列出兩個索引 | 這是**舊版定義**，只有 `hermes sessions optimize-storage`（opt-in）才會換掉 —— **與 v0.23.2 行為相同，非 regression** |
+| `state_meta.fts_tool_full_content_high_water` 仍在 | **預期且正確**：legacy inline 不重建 → marker 不被清 → 每次開啟都早退（成本為零） |
+
+**淨結果（實測）**：
+
+- ✅ **沒有重建** → 沒有 startup 阻塞、沒有寫鎖、沒有 120s admission 競爭
+- ✅ **搜尋功能完全正常**（實測 MATCH 命中數見 D3a）
+- ✅ **回退大幅簡化** → 只需換 image，**不需要還原 `state.db`**（原本擔心的 *"Downgrading is unsupported"* 不適用）
+- ⚠️ 唯一待觀察項：`fts_layout_drift` 顯示兩個 FTS 索引仍是舊定義。若日後想收斂到 v3 佈局，需跑 `hermes sessions optimize-storage`（**本次不做**：屬 opt-in 維護動作，會重建索引、與本次升級無關，且改變搜尋佈局需要另外驗證）
+
 #### 0.7.2 其他 write-on-open 路徑盤點（依我們的 marker 狀態）
 
 | 路徑 | 我們會不會觸發 | 證據 |
@@ -318,7 +346,7 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 | R6 | Telegram plugin 重構（**僅 2 檔 / +5 −5 行**，且為 `persistence` 機械改寫） | 🟢 極低 | 實測 diff 與 config key 相容性皆無行為變更；Phase D 仍實測往返確認 |
 | R7 | GitHub Actions `HTTP 422` fork auto-disable（Hard Rule 8） | 🟢 低 | 若遇 422，至 `https://github.com/kuniakil/hermes-agent/actions` 點擊 re-enable banner |
 | R8 | 網站 catalog 頁大量刪除（`website/src/pages/plugins/`、`skills/`） | 🟢 低 | 不影響 runtime image；若日後要自架官網需注意 |
-| **R9** | **v0.23.3 首次開啟觸發全量 `messages_fts` 重建**（我們的 DB 有 `fts_tool_full_content_high_water` marker） | 🟡 中 | 一次性；18,340 列 / 178 MB 預估秒級（上游 1.35M 列 / 8.9 GB 為 130s）。見 0.7 與 Phase D 的 D3a。備份已含重建前狀態，可回退 |
+| ~~R9~~ | ~~v0.23.3 首次開啟觸發全量 `messages_fts` 重建~~ | ✅ **N/A（已證實不會發生）** | **上線後實測確認：我們的 DB 是 legacy inline FTS 佈局（`CREATE VIRTUAL TABLE messages_fts USING fts5(content)`，無 `messages_fts_src` 投影 view），上游 `_migrate_misaligned_fts_source` 對 legacy inline 佈局**依設計早退**，不重建 → **無 startup 阻塞、無寫鎖、無 admission 競爭**。marker 保留是預期行為。見 0.7.3 |
 | **R10** | `hermes_state` public surface 由 247 → 24 個 method，且 `SessionDB(db_path=…)` 現在要求檔名必須是 `state.db` | 🟢 低 | 本 fork 無任何本地程式碼 import `hermes_state`（唯一 Python 差異是 `models_catalog_static.py`），無影響。**但**若日後安裝任何 pinned catalog 插件 import `hermes_state`，會在 2027 的 v0.27.0 移除前收到 `DeprecationWarning` |
 | **R11** | 🆕 Prompt-cache lifecycle controller 預設開啟：idle keep-alive 預熱 + learned route store 可能靜默停止送 `cache_control` markers | 🟢 **低（實測後降級）** | ✅ **對我們的 MiniMax 路由實質無影響**（見 0.9.1）：我們的路由**本來就不送 markers**，因此 (a) 不會有 keep-alive 預熱 → 無額外花費；(b) learned route 沒有樣本可學 → 不會抑制 markers。Phase D 仍觀察 `/context` tier/learning 行與 `cache/prompt_cache_routes.json` |
 | **R12** | `hermes sessions recover` 底層改寫為 `persistence/sqlite/admin/_recovery.py`，輸出未經行為稽核 | 🟢 低 | **回退計畫一律走 tar-copy 還原**（不經 Hermes），不依賴 `hermes sessions recover` |
@@ -370,32 +398,50 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 
 ### Phase C — 推送 Fork + 觸發 GHCR Build
 
-- [ ] C1 `git push -u kuniakil my-config-v0.23.3`
-- [ ] C2 `grep -A6 workflow_dispatch: .github/workflows/ghcr-publish.yml` 確認 input 為 `tag_name`（非 `tag`）
-- [ ] C3 `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.3 -f tag_name=v0.23.3 -f platforms=all`
-- [ ] C4 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.23.3`、`headSha` = **我們的 commit**；⏳ `gh run watch` **派給背景子代理**（Hard Rule 9），預估 10–12 分鐘
-- [ ] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.3` 確認 multi-arch index digest 存在
-- [ ] C6 若遇 `HTTP 422`，依 Hard Rule 8 至 `/actions` 點擊 re-enable banner（**不要**清 cache、**不要**改 repo settings）
+- [x] C1 `git push -u kuniakil my-config-v0.23.3` — ✅ 已推送
+- [x] C2 `grep -A6 workflow_dispatch: .github/workflows/ghcr-publish.yml` 確認 input 為 `tag_name`（非 `tag`）— ✅
+- [x] C3 `gh workflow run ghcr-publish.yml --repo kuniakil/hermes-agent --ref my-config-v0.23.3 -f tag_name=v0.23.3 -f platforms=all` — ✅ Run **44839843310**（無 422）
+- [x] C4 驗證 run：`event=workflow_dispatch`、`headBranch=my-config-v0.23.3`、`headSha=67246ec0b6554732b185e572472d4065ce3e2c2f`（**我們的 commit**）；背景子代理 watch，總耗時 **11m11s**（prepare 4s / amd64 10m35s / arm64 9m13s / merge 22s），結論 **success**
+- [x] C5 `docker buildx imagetools inspect ghcr.io/kuniakil/hermes-agent:v0.23.3` — ✅
+  - **Multi-arch Index Digest**：`sha256:90eace7745088aa3b3be8beecde7224f4fe91d282cf7a7d3dad9ed19ffbc04f0`
+  - `linux/amd64`：`sha256:c85578c1881603da70700542f64ec6b8f7e9a4efcf1f742e6799469b14d50cae`
+  - `linux/arm64`：`sha256:60c1f65ae18ec67e20973c7bab7627b2ad504308c40586419d868d23d76d2f3f`
+  - `latest` tag 亦指向同一 index digest
+  - install stamp：`{"branch": "my-config-v0.23.3", "commit": "67246ec0b…", "baseVersion": "v0.23.3", "dirty": false, "source": "ci"}`
+- [x] C6 若遇 `HTTP 422` — N/A（未遇）
 
 ### Phase D — K3s 部署 + 驗證
 
-- [ ] D0 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.3"`
-- [ ] D1 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status`
-- [ ] D2 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
-- [ ] **D3a ⚠️ FTS 重建觀察窗**（見 0.7）：首次啟動會持寫鎖重建 `messages_fts`（預估秒級，18,340 列 / 178 MB）
-  - 觀察 `messages_fts` / `messages_fts_trigram` 列數回到 18,340
-  - 確認 `state_meta.fts_tool_full_content_high_water` **已被清掉**（→ 不會每次重啟都重建）
-  - 確認 `PRAGMA integrity_check = ok`、`schema_version = 33`
-  - 若 startup 卡住 > 2 分鐘或 pod CrashLoop → 依回退計畫回退到 v0.23.2
-- [ ] D4 開機 log：`✓ telegram connected`、`✓ api_server connected`、`set_my_commands OK`、開機後 `errors.log` 0 ERROR/CRITICAL
-- [ ] D5 `hermes doctor` + s6 supervision 樹；確認 **`Config version up to date (v54)`**（config 遷移 53→54 已套用）
-- [ ] D6 DB 驗證：`PRAGMA integrity_check = ok`、`schema_version = 33`、`sessions` = 134、`messages` = 18,340、兩套 FTS 索引列數正常
-- [ ] D7 自訂層實測：`HOME=/opt/data`、`sshd` / `rsync` / `tini` / `tmux` / `ffmpeg`、locale、`entrypoint-ssh.sh`、`/tmp/.npm-cache`、`edge_tts` / `firecrawl` / `lark_oapi` / `exa_py` / `dingtalk_stream`、`faster_whisper` / `av` 全數正常
+- [x] D0 更新 `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag: "v0.23.3"`（`~/kubernetes` commit `e781529`，已 push）
+- [x] D1 `kubectl --context n100-cf apply -k ~/kubernetes/hermes/overlays/n100` + `rollout status` — ✅ `deployment "hermes-agent" successfully rolled out`
+- [x] D2 確認 Pod `1/1 Running`、`RESTARTS 0`、Pod `imageID` 與 C5 multi-arch index digest 一致
+  - Pod `hermes-agent-5676f5cb65-5bcl9`，`1/1 Running`，`RESTARTS 0`，IP `10.42.0.96`
+  - `imageID`：`ghcr.io/kuniakil/hermes-agent@sha256:90eace7745088aa3b3be8beecde7224f4fe91d282cf7a7d3dad9ed19ffbc04f0`（**與 C5 完全一致**）
+- [x] **D3a ✅ 最終結果：沒有重建，也不需要重建**（原預期有重建 —— 預期錯誤，已更正，見 0.7.3）
+  - 實測 `messages_fts` = 18,340、`messages_fts_trigram` = 18,340、`integrity_check = ok`、`schema_version = 33`
+  - `state_meta.fts_tool_full_content_high_water` **仍為 `'16551'`** → 這是**正確且預期**的：legacy inline 佈局在 v0.23.3 **依設計不重建**（`_migrate_misaligned_fts_source` 的 `if legacy or not base_index_recognised(cursor): return` 早退）
+  - **FTS 搜尋功能實測通過**：`messages_fts MATCH '升級'` → 111 hits、`'hermes'` → 5,186 hits、`'test'` → 409 hits；`messages_fts_trigram MATCH 'hermes'` → 5,372 hits（trigram 對 2 字中文不命中是 FTS5 trigram 的正常行為，base index 負責中文）
+  - 無 startup 阻塞、無寫鎖競爭、無 admission 競爭
+- [x] D4 開機 log — ✅ `✓ telegram connected`、`✓ api_server connected`、`set_my_commands OK (60 cmds)` × 3 scopes（Default / AllPrivateChats / AllGroupChats）
+  - **新 pod 啟動後 `errors.log` 0 ERROR / 0 CRITICAL**（最後一筆 ERROR 為 07:03 的 Telegram 網路重試，屬舊 pod 期間的既有噪音）
+  - `08:06:26 sqlite3.OperationalError: database is locked` → 來自**舊 pod 關閉時** shared-metrics exit flush（`hermes_cli/observability/shared_metrics.py:526` → `BEGIN IMMEDIATE`），與 v0.23.3 無關
+- [x] D5 `hermes doctor` + s6 supervision 樹 — ✅
+  - `✓ Config version up to date (v54)`（遷移 53→54 已套用）
+  - `✓ No deprecated config keys or env vars`、`✓ Python 3.14.9`、`✓ SQLite 3.53.1`、`state.db: WAL (179.1 MB)`
+  - `✓ Runtime venv staged`、所有 Required Packages ✓、`✓ Skills Hub lock file OK (22 hub-installed skill(s))`
+  - `Found 1 issue(s)`（缺選用 API keys）— **與 v0.23.2 基線一致**
+  - `⚠ install out of sync (pnpm: not installed or outdated)` — **既有上游噪音，維持不修**（與 v0.23.2 基線一致）
+  - s6：`main-hermes` up（pid 723），單一 python 行程 `gateway run --replace`
+- [x] D6 DB 驗證 — ✅ `integrity_check = ok`、`schema_version = 33`、`sessions = 134`、`messages = 18,340`（與 Phase 0 完全一致）、`messages_fts` = 18,340、`messages_fts_trigram` = 18,340
+- [x] D7 自訂層實測 — ✅ 全數正常：`HOME=/opt/data` / `HERMES_HOME=/opt/data`、`sshd` `rsync` `tini` `tmux` `ffmpeg` `ffprobe` `rg` `node` `npm` `python3`、`en_US.utf8` + `zh_TW.utf8`、`/opt/hermes/docker/entrypoint-ssh.sh`、`/tmp/.npm-cache`（1777）、`edge_tts` `firecrawl` `lark_oapi` `exa_py` `dingtalk_stream` `faster_whisper` `av`
 - [ ] D8 **Telegram 往返實測**：使用者於 Telegram 下達指令並收到完整回覆（含中文語音轉錄）
-- [ ] D9 `hermes --version` 確認版本字串為 `v0.23.3`
-- [ ] D10 **🆕 prompt-cache lifecycle 觀察**（見 0.9）：`/opt/data/cache/prompt_cache_routes.json` 是否生成、內容為何；`/context` 的 tier / learning 行；確認 idle keep-alive 預熱**未**造成異常花費或無限迴圈
-- [ ] D11 **確認 `prompt_caching.cache_ttl` 仍為 `5m`**（遷移應保留 bare 值，只多一行 ℹ 提示）：`grep -A2 '^prompt_caching:' /opt/data/config.yaml`
-- [ ] D12 觀察期：24h 內 `RESTARTS 0`、記憶體穩定、`errors.log` 無新增 ERROR
+- [x] D9 `hermes --version` — ✅ `Hermes Agent vv0.23.3 (2026.9.24) · upstream 67246ec0`
+- [x] D10 **prompt-cache lifecycle 觀察** — ✅ **與 0.9.1 的推導完全一致**
+  - `/opt/data/cache/prompt_cache_routes.json` **未生成**（我們的路由不送 markers → 無樣本可學 → 不會建立 store）
+  - `/opt/data/cache/pruned` **未生成**（cold prune 需先有 cache 過期 + 回收 ≥16,000 tokens）
+  - → **無 keep-alive 預熱、無額外花費、無 learned 抑制**
+- [x] D11 **確認 `prompt_caching.cache_ttl` 仍為 `5m`** — ✅ 遷移後 `config.yaml` 第 102–103 行仍為 `prompt_caching:` / `  cache_ttl: 5m`（bare 值保留）；`_config_version` 已由 53 更新為 **54**
+- [ ] D12 觀察期：24h 內 `RESTARTS 0`、記憶體穩定、`errors.log` 無新增 ERROR（**待 24h 後複查**）
 
 ### Phase E — 收尾
 
@@ -407,10 +453,11 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 ### 回退計畫
 
 1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag` 改回 `"v0.23.2"`，`kubectl --context n100-cf apply -k`。
-2. ⚠️ **若 v0.23.3 已跑過首次開啟（= FTS 已重建），必須連 `state.db` 一起還原**，不能只換 image —— 重建後的 `messages_fts_src` 投影在上游 v0.23.3 的訊息裡明寫 *"Downgrading is unsupported"*（`persistence/sqlite/_schema.py:485-486`）。
-   - 還原步驟：`kubectl scale deploy/hermes-agent --replicas=0` → 用 `~/backups/hermes-20261121/state.db`（+ `-wal` / `-shm`）覆蓋 `/opt/data/` → scale 回 1。
-   - **不依賴 `hermes sessions recover`**（底層已改寫為 `persistence/sqlite/admin/_recovery.py`，行為未稽核；見 B4/R12）。
-3. 若尚未跑過首次開啟（image 換掉但 pod 沒起來），**只換 image 即可**（DB schema 同為 v33、config stamp 降級僅顯示提示）。
+2. ✅ **實測後簡化：只需換 image，不需還原 DB。**
+   - 我們的 DB 是 **legacy inline FTS 佈局**，v0.23.3 **未重建**、未改動任何 FTS 結構（見 0.7.3）→ v0.23.2 可直接讀同一個 DB。
+   - DB schema 同為 v33；config `_config_version: 54` 降回 v0.23.2 只會顯示「written by a newer Hermes」提示，**不改寫設定、不阻擋啟動**。
+   - （原先前擔心的 *"Downgrading is unsupported"* 僅出現在 v0.23.3 **實際重建**時的 log，我們未觸發該路徑。）
+3. 仍**不依賴 `hermes sessions recover`**（底層已改寫為 `persistence/sqlite/admin/_recovery.py`，行為未稽核；見 B4/R12）。若真要還原原檔，用 `~/backups/hermes-20261121/`（`state.db` + `-wal` + `-shm` + `config.yaml` + `.env` + `.hermes/`）。
 4. 驗證 Pod `1/1 Running` 與 Telegram 往返正常。
 
 ---
