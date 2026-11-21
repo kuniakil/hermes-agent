@@ -152,6 +152,31 @@ v0.23.3 的 `_migrate_misaligned_fts_source`（`persistence/sqlite/_schema.py:40
 
 → 這是**一次性**成本（重建後 marker 被清掉），但落在**首次啟動**。詳見 Phase D 的 D3a 處理。
 
+#### 0.7.1 FTS 重建路徑逐行追查（本地 diff 實測，取代被 rate-limit 打死的子代理）
+
+| 問題 | 答案 | 證據 |
+|---|---|---|
+| 觸發點 | `_schema.py:1421` 在 `_init_schema` 流程內呼叫 → **同步**執行，非 background thread | `persistence/sqlite/_schema.py:1421`、`:1468-1489` |
+| 會阻塞啟動嗎 | **會**。`with fts_rebuild_admission(...) as admitted:` 之後直接 `rebuild_fn()` inline | `persistence/sqlite/_schema.py:1479-1482` |
+| 跨進程競爭 | 用檔案鎖 `{db_path}.fts_rebuild.lock`（= `/opt/data/state.db.fts_rebuild.lock`）。**阻塞等待最多 120 秒**；逾時則 **defer**（drop 全部 FTS triggers + 標記 stale → 搜尋暫時失效，等後續 recovery 重建） | `persistence/sqlite/_state/common.py:332-373`（`_FTS_REBUILD_LOCK_TIMEOUT_SECONDS = 120.0`、`_FTS_REBUILD_LOCK_POLL_SECONDS = 0.1`，`:146-147`） |
+| 我們的風險 | 🟢 **低**：目前 pod 只有 **1 個** Hermes python 行程（PID 198 `gateway run --replace`），無競爭；重建預估秒級 ≪ 120s 逾時；且**升級前已確認 `/opt/data/state.db.fts_rebuild.lock` 不存在**（無 stale lock） | `ps -eo pid,etime,cmd` 實測；`ls -la /opt/data/state.db.fts_rebuild.lock` → No such file |
+| trigram 會一起重建嗎 | ❌ **不會**。`_align()` 只在 `state_meta.fts_rebuild_high_water` 存在時才重建 trigram；我們線上該 marker **不存在** → 只動 `messages_fts`，`messages_fts_trigram` 不碰 | `persistence/sqlite/_schema.py:464-477`；線上 `state_meta` 實測 `fts_rebuild_high_water = None` |
+| 會留髒資料嗎 | ❌ 重建走 `BEGIN IMMEDIATE` + `DROP TRIGGER` → `DROP TABLE messages_fts` → 重跑 `FTS_SQL` → `INSERT ... VALUES('rebuild')`，索引由 `messages_fts_src` 投影 view 重新生成，原始 `messages` 資料不動 | `persistence/sqlite/_schema.py:449-479` |
+| marker 會清掉嗎 | ✅ 會。`_align()` 最後執行 `_CLEAR_REBUILD_MARKERS_SQL` + **`_DROP_RETIRED_TOOL_HIGH_WATER_SQL`** → 下次開啟不會再重建 | `persistence/sqlite/_schema.py:477-478` |
+| 會有警告嗎 | 會，且是**預期**的：*"carried the tool-row high-water marker that only Hermes releases older than FTS storage v3 write; rebuilt messages_fts from the aligned projection in N.Ns. **Downgrading is unsupported.**"* → Phase D 看到這行是**正常**，不是故障 | `persistence/sqlite/_schema.py:479-487` |
+
+> ⚠️ **注意那句 "Downgrading is unsupported"**：v0.23.3 重建後，降回 v0.23.2 會缺少 `messages_fts_src` 投影 view 的相容性。**回退計畫因此必須連 `state.db` 一起還原**（用 `~/backups/hermes-20261121/` 的備份），不能只換 image。
+
+#### 0.7.2 其他 write-on-open 路徑盤點（依我們的 marker 狀態）
+
+| 路徑 | 我們會不會觸發 | 證據 |
+|---|---|---|
+| `schema_version` migration ladder | ❌ 不会（表 = 33，門檻 `current_version < 16/18/20/22/23/25/30/33` 全為 false） | `persistence/sqlite/_schema.py:1199-1292` |
+| `_reconcile_columns`（ADD COLUMN） | ❌ 不会（DDL byte-identical，無欄位缺失） | `persistence/sqlite/_schema.py:857-859` |
+| `message_uid_backfill` | ❌ 不会（marker = `'1'`） | 線上 `state_meta` 實測 |
+| `legacy_refusal_repair_done` | ⚠️ **會**（marker 不存在）→ 逐 chat 取寫鎖執行 repair。與 v0.23.2 相同，非 v0.23.3 regression | `persistence/sqlite/conversation/_store/legacy_refusal.py` |
+| `fts_storage_version` marker 缺失 | 🟢 兩版皆為 opt-in 路徑（`optimize-storage` / `_stamp_settled_fts_layout`），**非 v0.23.3 regression** | `persistence/sqlite/_schema.py:1180-1185` |
+
 ### 0.8 Breaking-change 深度稽核（子代理實測，diff 佐證）
 
 | # | 面向 | 變更 | 證據 | 對我們的影響 |
@@ -367,8 +392,11 @@ git merge-tree --write-tree --name-only upstream-v0.23.3 my-config-v0.23.2
 ### 回退計畫
 
 1. `~/kubernetes/hermes/overlays/n100/kustomization.yaml` `newTag` 改回 `"v0.23.2"`，`kubectl --context n100-cf apply -k`。
-2. 由於 DB schema 同為 v33、config stamp 降級僅顯示提示，**理論上可直接降回**；若需完整回復升級前狀態，先停 Pod 再以 `~/backups/hermes-20261121/` 還原 `/opt/data`。
-3. 驗證 Pod `1/1 Running` 與 Telegram 往返正常。
+2. ⚠️ **若 v0.23.3 已跑過首次開啟（= FTS 已重建），必須連 `state.db` 一起還原**，不能只換 image —— 重建後的 `messages_fts_src` 投影在上游 v0.23.3 的訊息裡明寫 *"Downgrading is unsupported"*（`persistence/sqlite/_schema.py:485-486`）。
+   - 還原步驟：`kubectl scale deploy/hermes-agent --replicas=0` → 用 `~/backups/hermes-20261121/state.db`（+ `-wal` / `-shm`）覆蓋 `/opt/data/` → scale 回 1。
+   - **不依賴 `hermes sessions recover`**（底層已改寫為 `persistence/sqlite/admin/_recovery.py`，行為未稽核；見 B4/R12）。
+3. 若尚未跑過首次開啟（image 換掉但 pod 沒起來），**只換 image 即可**（DB schema 同為 v33、config stamp 降級僅顯示提示）。
+4. 驗證 Pod `1/1 Running` 與 Telegram 往返正常。
 
 ---
 
