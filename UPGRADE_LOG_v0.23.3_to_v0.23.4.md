@@ -188,7 +188,7 @@ Hermes 在 Telegram 上做的 v0.23.4 巡檢，**核心判定全部正確**（�
 
 | # | 發現 | 狀態 |
 |---|---|---|
-| F1 | ⭐ doctor 的 `cache/uv` 警告有盲區 + 1 GiB 門檻 → **不可當作「已解」的證據** | ✅ 記錄（2.9）；可靠做法是每次升級後手動量 |
+| F1 | ⭐ doctor 的 `cache/uv` 警告有盲區 + 1 GiB 門檻 → **不可當作「已解」的證據** | ✅ 記錄（2.9）；**已寫入 `agent-release-upgrade` skill 的 Phase 3「升級後必做：磁碟基線」**，往後每次升級都會自動量一次 |
 | F2 | `cache/uv` 與 huggingface blob 是無上限增長點 | ✅ 本次清掉 small 模型 + 兩個 8/21 舊 uv 快取（−2.7 G）；pm 的 `cache/uv` 保留（刪了會 re-seed） |
 | F3 | Hermes 巡檢報告的 4 處錯誤（ERROR 級別漏數、量錯目錄、基期用錯、漏歸因） | ✅ 記錄（2.10）；**驗收一律獨立複算** |
 | F4 | `skills.index_desc_limit: 60` 新預設 → 既有 session prompt cache 一次性 miss | ✅ 預期內，不處理 |
